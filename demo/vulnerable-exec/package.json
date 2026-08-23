@@ -1,7 +1,7 @@
 {
   "name": "vulnerable-exec-demo",
   "version": "1.0.0",
-  "description": "Hardened ShipCheck demo repository \u2014 allowlisted diagnostics, safe arithmetic, and verified JWT handling.",
+  "description": "ShipCheck demo repository — a small internal admin/dev-tools service with intentional secret, JWT, and dynamic-execution vulnerabilities.",
   "main": "src/server.ts",
   "dependencies": {
     "express": "^4.19.2",

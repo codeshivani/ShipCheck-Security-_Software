@@ -161,7 +161,7 @@ export function analyzeAuthorizationFlow(node: t.Node): AuthorizationFlowSummary
           ? callee.property.name
           : "";
 
-      if (/^(authenticate|isAuthenticated|requireAuth|ensureAuth|checkAuth|verifyToken|verifyJwt|validateToken|assertAuthenticated|getServerSession)$/i.test(calleeName)) {
+      if (/^(authenticate|isAuthenticated|requireAuth|ensureAuth|checkAuth|verifyToken|verifyJwt|validateToken|assertAuthenticated|getServerSession|requireUser|requireMfa)$/i.test(calleeName)) {
         authenticated = true;
       }
 

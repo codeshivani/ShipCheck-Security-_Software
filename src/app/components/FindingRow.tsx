@@ -26,11 +26,6 @@ export function FindingRow({
           <div className="text-xs text-sc-muted font-display truncate">
             {finding.file}:{finding.line} · {finding.cwe}
           </div>
-          {finding.context && finding.context !== "production" && (
-            <span className="mt-1 inline-flex rounded-full border border-[#ead8a6] bg-[#fffaf0] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sc-high">
-              {finding.context} context · not score-bearing
-            </span>
-          )}
         </div>
       </div>
       <div className="flex items-center gap-2 shrink-0">

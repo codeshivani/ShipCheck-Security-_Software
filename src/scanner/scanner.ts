@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import crypto from "crypto";
-import { Finding, type FindingContext } from "@/types/findings";
+import { Finding } from "@/types/findings";
 import { ScanReport } from "@/types/reports";
 import { computeRiskReport } from "@/risk/score";
 import { parseSource, ParseError } from "./parser/parse";
@@ -13,38 +13,11 @@ import type { ParsedFile } from "./parser/parse";
 import { performance } from "perf_hooks";
 
 export const SCAN_TIMEOUT_MS = 60_000;
-export const MAX_CONCURRENT_SCANS = 3;
+export const MAX_CONCURRENT_SCANS = 2;
 
 export { RepoError };
 
 let activeScans = 0;
-
-// Small bounded AST cache: rescans and repeated batch scans often revisit the
-// same source. Keeping only small files prevents a large repository from
-// turning the cache into a memory sink.
-const PARSE_CACHE_MAX = 128;
-const PARSE_CACHE_MAX_FILE_BYTES = 256 * 1024;
-const parseCache = new Map<string, ParsedFile>();
-
-function cachedParse(relPath: string, source: string): { parsed: ParsedFile; hit: boolean } {
-  const key = crypto.createHash("sha1").update(relPath).update("\0").update(source).digest("hex");
-  const cached = parseCache.get(key);
-  if (cached) {
-    parseCache.delete(key);
-    parseCache.set(key, cached);
-    return { parsed: cached, hit: true };
-  }
-  const parsed = parseSource(relPath, source);
-  if (Buffer.byteLength(source, "utf8") <= PARSE_CACHE_MAX_FILE_BYTES) {
-    parseCache.set(key, parsed);
-    while (parseCache.size > PARSE_CACHE_MAX) {
-      const oldest = parseCache.keys().next().value as string | undefined;
-      if (!oldest) break;
-      parseCache.delete(oldest);
-    }
-  }
-  return { parsed, hit: false };
-}
 
 export async function withScanSlot<T>(fn: () => Promise<T>): Promise<T> {
   if (activeScans >= MAX_CONCURRENT_SCANS) {
@@ -60,39 +33,6 @@ export async function withScanSlot<T>(fn: () => Promise<T>): Promise<T> {
 
 function throwIfAborted(signal?: AbortSignal) {
   if (signal?.aborted) throw new RepoError("Scan timed out and was cancelled.", "SCAN_TIMEOUT");
-}
-
-function classifyFindingContext(filePath: string): FindingContext {
-  const normalized = filePath.replace(/\\/g, "/").toLowerCase();
-  const segments = normalized.split("/");
-  const base = segments[segments.length - 1] ?? normalized;
-  if (segments.some(part => ["test", "tests", "__tests__"].includes(part)) || /\.(test|spec)\.[cm]?[jt]sx?$/.test(base)) return "test";
-  if (segments.some(part => ["fixtures", "fixture"].includes(part))) return "fixture";
-  if (segments.some(part => ["mocks", "mock", "__mocks__"].includes(part))) return "mock";
-  if (segments.some(part => ["examples", "example", "samples", "sample", "demo"].includes(part))) return "example";
-  if (segments.some(part => ["generated", "gen"].includes(part)) || /\.generated\./.test(base)) return "generated";
-  return "production";
-}
-
-function normalizeFindingContext(findings: Finding[], warnings: string[]): Finding[] {
-  let downgraded = 0;
-  const normalized = findings.map((finding) => {
-    const context = classifyFindingContext(finding.file);
-    if (context === "production") return { ...finding, context };
-    if (finding.status === "match") {
-      downgraded++;
-      return {
-        ...finding,
-        context,
-        status: "review" as const,
-        confidence: "medium" as const,
-        evidence: [...finding.evidence, `finding is located in ${context} code and is not counted against the production risk score`],
-      };
-    }
-    return { ...finding, context };
-  });
-  if (downgraded) warnings.push(`${downgraded} finding(s) were moved to review because they occur in test/fixture/mock/example code.`);
-  return normalized;
 }
 
 export interface ScanOptions {
@@ -113,6 +53,12 @@ function ruleCandidate(ruleId: string, source: string): boolean {
       return /(?:req|request|ctx|context)\s*\.\s*(?:params|query|body)|(?:findById|findOne|findUnique|findFirst|findByPk|findMany|find\s*\(|select\s*\()/i.test(source);
     case "R5":
       return /(?:eval\s*\(|new\s+Function\s*\(|\bFunction\s*\(|(?:exec|execSync|spawn|spawnSync)\s*\(|\.\s*(?:exec|execSync|spawn|spawnSync)\s*\()/i.test(source);
+    case "R6":
+      return /(?:\.query\s*\(|\.raw\s*\(|\.execute(?:Raw)?\s*\(|query\s*\(|raw\s*\()/i.test(source);
+    case "R7":
+      return /(?:readFile|writeFile|appendFile|rm|unlink|readdir|createReadStream|createWriteStream|path\.(?:join|resolve|normalize))\s*\(/i.test(source);
+    case "R8":
+      return /(?:fetch|axios\.(?:get|post|put|patch|delete|request)|\b(?:got|request)\s*\()/i.test(source);
     default:
       return true;
   }
@@ -138,43 +84,29 @@ export async function scanDirectory(rootDir: string, repoUrl: string, options: S
 
   const parsedFiles: ParsedFile[] = [];
   const readStart = performance.now();
-  // Read source files concurrently. Disk/network-backed temp directories are
-  // the dominant cost for many medium repositories; a small worker pool keeps
-  // I/O busy without creating hundreds of open file descriptors.
-  const readQueue = [...walk.files];
-  const readWorkers = Math.min(12, Math.max(2, readQueue.length));
-  const parsedChunks: ParsedFile[][] = Array.from({ length: readWorkers }, () => []);
-  await Promise.all(parsedChunks.map(async (chunk, workerIndex) => {
-    while (true) {
-      throwIfAborted(signal);
-      const item = readQueue.pop();
-      if (!item) return;
-      const { relPath, absPath } = item;
-      let source: string;
-      try {
-        source = await fs.readFile(absPath, "utf-8");
-      } catch {
-        warnings.push(`Could not read ${relPath} — skipped.`);
+  for (const { relPath, absPath } of walk.files) {
+    throwIfAborted(signal);
+    let source: string;
+    try {
+      source = await fs.readFile(absPath, "utf-8");
+    } catch {
+      warnings.push(`Could not read ${relPath} — skipped.`);
+      continue;
+    }
+
+    const parseStart = performance.now();
+    try {
+      parsedFiles.push(parseSource(relPath, source));
+      filesScanned++;
+    } catch (err) {
+      if (err instanceof ParseError) {
+        warnings.push(`Could not parse ${relPath} (syntax not supported) — skipped.`);
         continue;
       }
-      const parseStart = performance.now();
-      try {
-        const parsedResult = cachedParse(relPath, source);
-        chunk.push(parsedResult.parsed);
-        if (parsedResult.hit) timings.parseCacheHits = (timings.parseCacheHits ?? 0) + 1;
-        filesScanned++;
-      } catch (err) {
-        if (err instanceof ParseError) {
-          warnings.push(`Could not parse ${relPath} (syntax not supported) — skipped.`);
-          continue;
-        }
-        throw err;
-      }
-      timings.parseMs = (timings.parseMs ?? 0) + Math.round(performance.now() - parseStart);
-      if (workerIndex === 0 && filesScanned % 25 === 0) throwIfAborted(signal);
+      throw err;
     }
-  }));
-  parsedFiles.push(...parsedChunks.flat());
+    timings.parseMs = (timings.parseMs ?? 0) + Math.round(performance.now() - parseStart);
+  }
   timings.readParseMs = Math.round(performance.now() - readStart);
 
   throwIfAborted(signal);
@@ -216,14 +148,10 @@ export async function scanDirectory(rootDir: string, repoUrl: string, options: S
   }
   timings.flowGenerationMs = Math.round(performance.now() - flowStart);
 
-  // Classify findings by source context before scoring. Test fixtures and mocks
-  // remain visible to developers but do not distort the production score.
-  const contextualFindings = normalizeFindingContext(findings, warnings);
-
   // Deterministically eliminate exact duplicates and make same-line distinct
   // occurrences collision-safe. Ordering is derived from source evidence, not
   // discovery timing, so IDs remain stable across rescans.
-  const orderedFindings = [...contextualFindings].sort((a, b) =>
+  const orderedFindings = [...findings].sort((a, b) =>
     `${a.file}:${a.ruleId}:${a.line}:${a.issue}:${a.evidence.join("|")}`.localeCompare(
       `${b.file}:${b.ruleId}:${b.line}:${b.issue}:${b.evidence.join("|")}`,
     ),

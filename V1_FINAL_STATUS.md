@@ -74,3 +74,8 @@ Do not present the dependency-dependent build as passed until it is actually run
 - cooperative scan cancellation cannot preempt a single synchronous CPU-bound AST operation
 
 These are intentional V1 boundaries, not hidden claims of complete application security.
+
+
+## V2 hardening in this package
+
+This package adds R6 SQL injection, R7 path traversal, R8 SSRF, direct repository-URL scanning, and `.shipcheckignore` support. ShipCheck's own analyzer implementation is excluded from its self-scan to prevent rule-code false positives.

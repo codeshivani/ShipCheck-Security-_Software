@@ -5,6 +5,7 @@ import { ScanReport } from "@/types/reports";
 
 export interface ScanSession {
   scanId: string;
+  userId: string;
   repoDir: string;
   cleanup: () => Promise<void>;
   report: ScanReport;

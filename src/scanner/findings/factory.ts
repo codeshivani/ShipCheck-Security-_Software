@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { Confidence, Finding, FindingContext, FindingStatus, RuleId, Severity } from "@/types/findings";
+import { Confidence, Finding, FindingStatus, RuleId, Severity } from "@/types/findings";
 
 export interface RawFindingInput {
   file: string;
@@ -11,7 +11,6 @@ export interface RawFindingInput {
   cwe: string;
   status: FindingStatus;
   confidence: Confidence;
-  context?: FindingContext;
   evidence: string[];
   issue: string;
   source?: string; // full file source, used to extract a snippet
@@ -62,7 +61,6 @@ export function makeFinding(input: RawFindingInput): Finding {
     cwe: input.cwe,
     status: input.status,
     confidence: input.confidence,
-    context: input.context ?? "unknown",
     evidence: input.evidence,
     issue: input.issue,
     snippet,

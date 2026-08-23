@@ -12,7 +12,6 @@ export interface StoredScan {
 }
 
 const KEY = "shipcheck_scans";
-const USER_KEY = "shipcheck_user";
 const REPO_KEY = "shipcheck_repositories";
 
 export function getStoredScans(): StoredScan[] {
@@ -38,15 +37,3 @@ export function removeRepository(url: string) {
   localStorage.setItem(REPO_KEY, JSON.stringify(repos));
 }
 
-export function getUser() {
-  if (typeof window === "undefined") return null;
-  try { return JSON.parse(localStorage.getItem(USER_KEY) || "null"); } catch { return null; }
-}
-
-export function saveUser(user: { username: string; email: string; github: string }) {
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
-}
-
-export function logout() {
-  localStorage.removeItem(USER_KEY);
-}

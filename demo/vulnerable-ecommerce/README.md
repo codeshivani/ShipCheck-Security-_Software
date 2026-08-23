@@ -1,8 +1,15 @@
-# hardened-ecommerce (ShipCheck security demo)
+# vulnerable-ecommerce (ShipCheck demo repo)
 
-This repository is a hardened comparison application. Resource lookups are
-constrained to the authenticated user's identity and product writes require
-staff authorization.
+A small orders/products service used to demonstrate ShipCheck's R1 (missing
+authorization) and R4 (potential IDOR) rules.
 
-The vulnerable examples used by ShipCheck's rule tests are generated in
-`tests/scanner/demo-repos.test.ts` at runtime.
+This code is intentionally vulnerable. Do not deploy it.
+
+| File | Rule | Issue |
+|---|---|---|
+| `src/routes/products.ts` | R1 | `PUT /products/:sku` has no authorization guard |
+| `src/routes/orders.ts` | R4 | `GET /orders/:orderId` and `GET /orders/:orderId/invoice` look up orders by a raw request-controlled id with no ownership constraint |
+
+`src/routes/orders.ts`'s `GET /orders/mine/:orderId` route and
+`src/routes/products.ts`'s `DELETE /products/:sku` route are intentionally
+left safe, as negative controls.

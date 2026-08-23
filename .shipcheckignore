@@ -1,0 +1,5 @@
+# ShipCheck's own static-analysis engine is tooling, not an application endpoint.
+# Excluding it prevents the scanner from treating rule descriptions and analyzer
+# implementation patterns as vulnerabilities in the application being scanned.
+src/scanner/rules/
+src/scanner/analysis/

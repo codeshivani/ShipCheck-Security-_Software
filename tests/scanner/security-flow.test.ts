@@ -58,11 +58,10 @@ describe("project-specific security flows", () => {
   });
 
   it("never places the raw secret into the R2 flow", () => {
-    const knownSecret = ["sk-", "abcdefghij1234567890XY"].join("");
-    const source = `export const key = "${knownSecret}";`;
+    const source = `export const key = "sk-abcdefghij1234567890XY";`;
     const f = finding("R2", 1, source);
     const flow = buildSecurityFlow(f, parseSource("src/config.ts", source));
-    expect(JSON.stringify(flow)).not.toContain(knownSecret);
+    expect(JSON.stringify(flow)).not.toContain("sk-abcdefghij1234567890XY");
     expect(flow.nodes.some(n => n.label.includes("Redacted"))).toBe(true);
   });
 });

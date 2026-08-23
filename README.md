@@ -94,19 +94,27 @@ guarantee — see the disclaimer surfaced in the UI and in
 
 ## Demo repositories
 
-The repositories in `demo/` are now hardened comparison applications. They are
-kept safe so the ShipCheck repository can scan itself without committing
-intentional vulnerabilities. The true-positive examples used to exercise R1-R5
-are generated in isolated temporary directories by `tests/scanner/demo-repos.test.ts`.
+Three small, realistic, intentionally-vulnerable repos live in `demo/` for
+scanning locally or seeding a live demo:
 
-| Repo | Purpose |
+| Repo | Rules it trips |
 |---|---|
-| `demo/vulnerable-auth` | Hardened authentication/authorization comparison |
-| `demo/vulnerable-ecommerce` | Ownership-constrained resource comparison |
-| `demo/vulnerable-exec` | Allowlisted command execution and verified JWT comparison |
+| `demo/vulnerable-auth` | R1, R2, R3 |
+| `demo/vulnerable-ecommerce` | R1, R4 |
+| `demo/vulnerable-exec` | R2, R3, R5 |
 
-The rule tests still cover the vulnerable patterns end-to-end, but those patterns
-are not committed as source code in the product repository.
+Each also contains one or more intentionally-**safe** comparison routes (e.g.
+an ownership-constrained query, an auth-guarded handler) as negative
+controls, so the rules' precision is visible, not just their recall. See each
+repo's `README.md` for a line-by-line breakdown.
+
+To scan one directly without going through GitHub (useful for local
+iteration):
+
+```ts
+import { scanDirectory } from "@/scanner/scanner";
+const report = await scanDirectory("demo/vulnerable-auth", "demo://vulnerable-auth");
+```
 
 ## Project-specific security flow
 
@@ -145,3 +153,45 @@ deliberately deferred — see the original spec for the rationale.
 - Patch application (`src/ai/patch.ts`) resolves and validates the target path
   stays within the cloned repo directory before writing, rejecting any
   AI-generated diff that tries to escape it.
+
+## Production deployment
+
+ShipCheck V1 is deployment-ready with a persistent PostgreSQL-backed report store. See `DEPLOYMENT.md` and `migrations/001_init.sql`.
+
+Recommended topology:
+
+- Railway persistent app service for Next.js + Git/static analysis.
+- Supabase PostgreSQL for durable scan reports, batch reports, and share links.
+- Ephemeral local workspace for active repository analysis only.
+
+The database stores report metadata/results, not cloned repositories.
+
+
+## ShipCheck 2.1 security rule pack
+
+The scanner now runs eight deterministic rules:
+
+| Rule | CWE | Severity | Detection |
+|---|---|---|---|
+| R1 | CWE-862 | Critical | Missing endpoint authorization |
+| R2 | CWE-798 | Critical | Hardcoded secrets/API keys |
+| R3 | CWE-347 | High | Unsafe JWT handling |
+| R4 | CWE-639 | High | Potential IDOR |
+| R5 | CWE-95 | Critical | Untrusted dynamic execution |
+| R6 | CWE-89 | Critical | Request data into raw SQL/query sinks |
+| R7 | CWE-22 | High | Request data into filesystem paths |
+| R8 | CWE-918 | High | Request-controlled outbound URLs |
+
+All score-bearing findings require deterministic evidence. The scanner does not claim that a clean result proves complete security.
+
+### Scan by repository URL
+
+The New Scan screen accepts a public GitHub repository URL directly:
+
+`https://github.com/owner/repository`
+
+The existing GitHub-profile batch scanner remains available as a second workflow.
+
+### Analyzer exclusions
+
+A `.shipcheckignore` file can exclude tool-generated or analyzer-only code from application findings. This build excludes ShipCheck's own `src/scanner/rules/` and `src/scanner/analysis/` implementation directories so the scanner does not mistake its rule descriptions/patterns for application vulnerabilities.

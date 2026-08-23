@@ -2,13 +2,11 @@
 // This schema is the core product feature: every scanner finding must be traceable
 // to a file/line, a rule, and concrete evidence. The LLM never invents or edits this.
 
-export type RuleId = "R1" | "R2" | "R3" | "R4" | "R5";
+export type RuleId = "R1" | "R2" | "R3" | "R4" | "R5" | "R6" | "R7" | "R8";
 
 export type Severity = "Critical" | "High" | "Medium";
 
 export type FindingStatus = "match" | "review" | "suppressed";
-
-export type FindingContext = "production" | "test" | "fixture" | "mock" | "example" | "generated" | "unknown";
 
 export type Confidence = "high" | "medium";
 
@@ -54,7 +52,6 @@ export interface Finding {
   cwe: string;
   status: FindingStatus;
   confidence: Confidence;
-  context?: FindingContext;
   evidence: string[];
   issue: string;
   snippet?: string; // small surrounding code excerpt for UI display
@@ -73,17 +70,5 @@ export interface RuleDefinition {
 // confidence "high". "review" findings are surfaced separately in the UI
 // and do not automatically move the score, per spec section 7.
 export function isScoreBearing(f: Finding): boolean {
-  // Findings inside test fixtures/mocks are still surfaced, but do not
-  // represent production attack surface and therefore do not affect the
-  // headline score. This keeps self-scans honest without hiding evidence.
-  return f.status === "match" && f.confidence === "high" && (f.context ?? "production") === "production";
-}
-
-export function countFindingsBySeverity(findings: Finding[]): { Critical: number; High: number; Medium: number } {
-  const counts = { Critical: 0, High: 0, Medium: 0 };
-  for (const finding of findings) {
-    if (finding.status === "suppressed") continue;
-    counts[finding.severity]++;
-  }
-  return counts;
+  return f.status === "match" && f.confidence === "high";
 }

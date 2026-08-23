@@ -17,6 +17,21 @@ export const MAX_TOTAL_SCANNED_BYTES = 64 * 1024 * 1024;
 
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", ".next", "coverage", ".turbo", "vendor"]);
 
+async function loadIgnorePrefixes(rootDir: string): Promise<string[]> {
+  const file = path.join(rootDir, ".shipcheckignore");
+  const raw = await fs.readFile(file, "utf-8").catch(() => "");
+  return raw
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line && !line.startsWith("#"))
+    .map(line => line.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/$/, ""));
+}
+
+function isIgnored(relPath: string, ignorePrefixes: string[]): boolean {
+  const normalized = relPath.replace(/\\/g, "/");
+  return ignorePrefixes.some(prefix => normalized === prefix || normalized.startsWith(`${prefix}/`));
+}
+
 function throwIfAborted(signal?: AbortSignal) {
   if (signal?.aborted) {
     throw new RepoError("Scan timed out and was cancelled.", "SCAN_TIMEOUT");
@@ -30,6 +45,7 @@ export async function walkRepo(rootDir: string, signal?: AbortSignal): Promise<W
   let skippedTooMany = false;
   let totalCandidateBytes = 0;
   const rootResolved = path.resolve(rootDir);
+  const ignorePrefixes = await loadIgnorePrefixes(rootResolved);
 
   async function walk(dir: string) {
     throwIfAborted(signal);
@@ -39,33 +55,39 @@ export async function walkRepo(rootDir: string, signal?: AbortSignal): Promise<W
     }
 
     const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
-    const childDirs: string[] = [];
-    const fileCandidates = entries.filter(entry => !entry.isSymbolicLink() && entry.isFile())
-      .map(entry => ({ entry, abs: path.resolve(dir, entry.name), rel: path.relative(rootResolved, path.resolve(dir, entry.name)) }))
-      .filter(item => item.abs.startsWith(rootResolved + path.sep) && isSupportedFile(item.rel));
-
-    // Stat candidate files concurrently; metadata I/O is much cheaper this way
-    // on repositories containing hundreds of source files.
-    const stats = await Promise.all(fileCandidates.map(async item => ({ item, stat: await fs.stat(item.abs).catch(() => null) })));
-    for (const { item, stat } of stats) {
-      throwIfAborted(signal);
-      if (files.length >= MAX_FILES) { skippedTooMany = true; return; }
-      if (!stat) continue;
-      if (stat.size > MAX_FILE_SIZE_BYTES) { skippedTooLarge.push(item.rel); continue; }
-      if (totalCandidateBytes + stat.size > MAX_TOTAL_SCANNED_BYTES) { skippedByTotalBytes.push(item.rel); continue; }
-      files.push({ relPath: item.rel, absPath: item.abs, size: stat.size });
-      totalCandidateBytes += stat.size;
-    }
-
     for (const entry of entries) {
       throwIfAborted(signal);
-      if (files.length >= MAX_FILES) { skippedTooMany = true; return; }
-      if (entry.isSymbolicLink() || !entry.isDirectory() || SKIP_DIRS.has(entry.name)) continue;
-      childDirs.push(path.resolve(dir, entry.name));
-    }
-    for (const child of childDirs) {
-      await walk(child);
-      if (files.length >= MAX_FILES || totalCandidateBytes >= MAX_TOTAL_SCANNED_BYTES) return;
+      if (files.length >= MAX_FILES) {
+        skippedTooMany = true;
+        return;
+      }
+      if (entry.isSymbolicLink()) continue;
+
+      const abs = path.resolve(dir, entry.name);
+      const rel = path.relative(rootResolved, abs);
+      if (!abs.startsWith(rootResolved + path.sep) && abs !== rootResolved) continue;
+      if (isIgnored(rel, ignorePrefixes)) continue;
+
+      if (entry.isDirectory()) {
+        if (SKIP_DIRS.has(entry.name)) continue;
+        await walk(abs);
+        continue;
+      }
+      if (!entry.isFile() || !isSupportedFile(rel)) continue;
+
+      const stat = await fs.stat(abs).catch(() => null);
+      if (!stat) continue;
+      if (stat.size > MAX_FILE_SIZE_BYTES) {
+        skippedTooLarge.push(rel);
+        continue;
+      }
+      if (totalCandidateBytes + stat.size > MAX_TOTAL_SCANNED_BYTES) {
+        skippedByTotalBytes.push(rel);
+        continue;
+      }
+
+      files.push({ relPath: rel, absPath: abs, size: stat.size });
+      totalCandidateBytes += stat.size;
     }
   }
 

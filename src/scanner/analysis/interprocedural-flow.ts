@@ -34,7 +34,7 @@ interface State {
 }
 
 const DB_METHODS = new Set(["findById", "findByPk", "findOne", "findFirst", "findUnique", "find", "get"]);
-const AUTH_NAMES = /^(authenticate|isAuthenticated|requireAuth|ensureAuth|checkAuth|verifyToken|verifyJwt|validateToken|assertAuthenticated|getServerSession)$/i;
+const AUTH_NAMES = /^(authenticate|isAuthenticated|requireAuth|ensureAuth|checkAuth|verifyToken|verifyJwt|validateToken|assertAuthenticated|getServerSession|requireUser|requireMfa)$/i;
 const AUTHZ_NAMES = /^(authorize|authorizeRequest|authorizeResource|checkPermission|hasPermission|assertAuthorized|assertPermission|can|canAccess|isAllowed|enforceAccess|checkAccess)$/i;
 const OWNERSHIP_FIELDS = /^(user_?id|owner_?id|tenant_?id|account_?id|created_?by|createdby)$/i;
 const EXEC_NAMES = new Set(["exec", "execSync", "spawn", "spawnSync"]);

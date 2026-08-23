@@ -1,8 +1,17 @@
-# hardened-exec (ShipCheck security demo)
+# vulnerable-exec (ShipCheck demo repo)
 
-This repository is a hardened comparison application. Diagnostic commands use
-an allowlist and `execFile` without a shell, formulas use a small numeric
-allowlist, and JWT claims are verified before authorization decisions.
+A small internal admin/dev-tools service used to demonstrate ShipCheck's R2
+(hardcoded secret), R3 (unsafe JWT handling), and R5 (untrusted dynamic
+execution) rules.
 
-The vulnerable examples used by ShipCheck's rule tests are generated in
-`tests/scanner/demo-repos.test.ts` at runtime.
+This code is intentionally vulnerable. Do not deploy it.
+
+| File | Rule | Issue |
+|---|---|---|
+| `src/config.ts` | R2 | Hardcoded internal API key |
+| `src/routes/reports.ts` | R3 | `jwt.decode()` result trusted for an authorization decision |
+| `src/routes/tools.ts` | R5 | Request body/query flows into `child_process.exec()` and `eval()` |
+
+`src/routes/tools.ts`'s `GET /tools/uptime` route and
+`src/routes/reports.ts`'s `GET /reports/:reportId/public` route are
+intentionally left safe, as negative controls.

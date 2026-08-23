@@ -11,7 +11,6 @@ import {
   isLikelyAuthIdentifier,
   isRequestMember,
   isSensitiveDatabaseCall,
-  nodeSource,
   traverseNode,
 } from "../analysis/ast-utils";
 import { analyzeAuthorizationFlow } from "../analysis/authorization-flow";
@@ -86,7 +85,7 @@ function hasSensitiveOperation(file: ParsedFile, node: t.Node): boolean {
       if (isSensitiveDatabaseCall(path.node)) found = true;
     },
   });
-  return found || /(prisma|sequelize|mongoose|knex|typeorm|repository|model)\./i.test(nodeSource(file.source, node));
+  return found;
 }
 
 function hasRequestControlledData(node: t.Node): boolean {

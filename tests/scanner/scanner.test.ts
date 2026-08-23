@@ -34,7 +34,7 @@ describe("scanDirectory", () => {
   it("detects a real finding end-to-end (R2 hardcoded secret)", async () => {
     await fs.writeFile(
       path.join(dir, "config.ts"),
-      `export const stripeKey = "${["sk-", "abcdefghij1234567890XY"].join("")}";\n`
+      `export const stripeKey = "sk-abcdefghij1234567890XY";\n`
     );
     const report = await scanDirectory(dir, "https://github.com/x/secret");
     const r2 = report.findings.filter((f) => f.ruleId === "R2" && f.status === "match");

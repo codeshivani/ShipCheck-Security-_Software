@@ -27,14 +27,14 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export async function persistScan(report: ScanReport, userId?: string | null) {
+export async function persistScan(report: ScanReport, userId: string) {
   if (!databaseEnabled()) return;
   await request("scans", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
     body: JSON.stringify({
       scan_id: report.scanId,
-      user_id: userId ?? null,
+      user_id: userId,
       repo_url: report.repoUrl,
       status: "complete",
       report,
@@ -44,34 +44,34 @@ export async function persistScan(report: ScanReport, userId?: string | null) {
   });
 }
 
-export async function updateScan(report: ScanReport) {
+export async function updateScan(report: ScanReport, userId: string) {
   if (!databaseEnabled()) return;
-  await request(`scans?scan_id=eq.${encodeURIComponent(report.scanId)}`, {
+  await request(`scans?scan_id=eq.${encodeURIComponent(report.scanId)}&user_id=eq.${encodeURIComponent(userId)}`, {
     method: "PATCH",
     body: JSON.stringify({ report, status: "complete", updated_at: new Date().toISOString() }),
   });
 }
 
-export async function listScans(limit = 50) {
+export async function listScans(userId: string, limit = 50) {
   if (!databaseEnabled()) return [];
   return request<Array<{ scan_id: string; repo_url: string; report: ScanReport; created_at: string }>>(
-    `scans?select=scan_id,repo_url,report,created_at&order=created_at.desc&limit=${Math.min(Math.max(limit, 1), 200)}`,
+    `scans?select=scan_id,repo_url,report,created_at&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=${Math.min(Math.max(limit, 1), 200)}`,
   );
 }
 
-export async function persistBatch(batchId: string, username: string, items: unknown[]) {
+export async function persistBatch(batchId: string, userId: string, username: string, items: unknown[]) {
   if (!databaseEnabled()) return;
   await request("batches", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-    body: JSON.stringify({ batch_id: batchId, username, items, created_at: new Date().toISOString() }),
+    body: JSON.stringify({ batch_id: batchId, user_id: userId, username, items, created_at: new Date().toISOString() }),
   });
 }
 
-export async function getBatch(batchId: string) {
+export async function getBatch(batchId: string, userId: string) {
   if (!databaseEnabled()) return null;
   const rows = await request<Array<{ batch_id: string; username: string; items: unknown[]; created_at: string }>>(
-    `batches?select=batch_id,username,items,created_at&batch_id=eq.${encodeURIComponent(batchId)}&limit=1`,
+    `batches?select=batch_id,username,items,created_at&batch_id=eq.${encodeURIComponent(batchId)}&user_id=eq.${encodeURIComponent(userId)}&limit=1`,
   );
   return rows[0] ?? null;
 }

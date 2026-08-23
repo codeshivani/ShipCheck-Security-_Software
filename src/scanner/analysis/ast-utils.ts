@@ -62,7 +62,7 @@ export function isLikelyAuthCall(node: t.CallExpression): boolean {
     : t.isMemberExpression(callee) && t.isIdentifier(callee.property)
       ? callee.property.name
       : "";
-  return /^(authenticate|isAuthenticated|requireAuth|ensureAuth|checkAuth|verifyToken|verifyJwt|validateToken|authorize|authorizeRequest|checkPermission|hasPermission|assertAuthenticated|assertAuthorized|assertRole|requireRole|requirePermission|guard|protect|withAuth|currentUser|getServerSession)$/i.test(name);
+  return /^(authenticate|isAuthenticated|requireAuth|ensureAuth|checkAuth|verifyToken|verifyJwt|validateToken|authorize|authorizeRequest|checkPermission|hasPermission|assertAuthenticated|assertAuthorized|assertRole|requireRole|requirePermission|requireUser|requireMfa|guard|protect|withAuth|withAuthorization|currentUser|getCurrentUser|getServerSession)$/i.test(name);
 }
 
 export function isLikelyAuthIdentifier(name: string): boolean {

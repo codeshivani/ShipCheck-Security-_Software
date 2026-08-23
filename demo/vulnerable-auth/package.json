@@ -1,7 +1,7 @@
 {
   "name": "vulnerable-auth-demo",
   "version": "1.0.0",
-  "description": "Hardened ShipCheck demo repository \u2014 authentication and authorization comparison application.",
+  "description": "ShipCheck demo repository — a small user-account service with intentional auth and JWT vulnerabilities.",
   "main": "src/server.ts",
   "dependencies": {
     "express": "^4.19.2",

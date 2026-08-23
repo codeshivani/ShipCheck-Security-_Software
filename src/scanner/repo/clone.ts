@@ -1,10 +1,8 @@
 import { spawn, execFile } from "child_process";
 import fs from "fs/promises";
-import { createWriteStream } from "fs";
 import os from "os";
 import path from "path";
 import crypto from "crypto";
-import { once } from "events";
 
 export class RepoError extends Error {
   constructor(message: string, public code: string) {
@@ -15,8 +13,8 @@ export class RepoError extends Error {
 
 const GITHUB_URL_PATTERN = /^https:\/\/github\.com\/([a-zA-Z0-9._-]+)\/([a-zA-Z0-9._-]+?)(?:\.git)?\/?$/;
 export const CLONE_TIMEOUT_MS = 60_000;
+export const GITHUB_PREFLIGHT_TIMEOUT_MS = 5_000;
 export const MAX_REPO_SIZE_BYTES = 150 * 1024 * 1024;
-const ARCHIVE_TIMEOUT_MS = 55_000;
 
 export function validateGitHubUrl(url: string): { owner: string; repo: string } {
   const trimmed = url.trim();
@@ -62,6 +60,7 @@ async function waitForExit(child: ReturnType<typeof spawn>, timeoutMs: number): 
 async function killProcessTree(child: ReturnType<typeof spawn>): Promise<void> {
   const pid = child.pid;
   if (!pid) return;
+
   if (process.platform === "win32") {
     await new Promise<void>((resolve) => {
       execFile("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true }, () => resolve());
@@ -69,6 +68,7 @@ async function killProcessTree(child: ReturnType<typeof spawn>): Promise<void> {
     await waitForExit(child, 2_000);
     return;
   }
+
   try { child.kill("SIGTERM"); } catch {}
   await waitForExit(child, 500);
   if (child.exitCode === null) {
@@ -77,92 +77,20 @@ async function killProcessTree(child: ReturnType<typeof spawn>): Promise<void> {
   }
 }
 
-async function runTarExtract(archive: string, dir: string, signal?: AbortSignal): Promise<void> {
-  throwIfAborted(signal);
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn("tar", ["-xzf", archive, "-C", dir, "--strip-components=1"], { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
-    let stderr = "";
-    let settled = false;
-    const finish = (error?: Error) => {
-      if (settled) return;
-      settled = true;
-      signal?.removeEventListener("abort", onAbort);
-      error ? reject(error) : resolve();
-    };
-    const onAbort = async () => {
-      if (settled) return;
-      await killProcessTree(child);
-      finish(new RepoError("Archive extraction cancelled.", "CLONE_CANCELLED"));
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-    child.stderr?.on("data", (chunk: Buffer) => { stderr = (stderr + chunk.toString()).slice(-4_000); });
-    child.once("error", (error) => finish(new Error(error.message)));
-    child.once("close", (code) => {
-      if (settled) return;
-      if (code === 0) finish();
-      else finish(new Error(`tar extraction failed${stderr.trim() ? `: ${stderr.trim()}` : ` (exit ${code ?? "unknown"})`}`));
-    });
-  });
-}
-
-async function downloadGitHubArchive(owner: string, repo: string, dir: string, signal?: AbortSignal): Promise<void> {
-  throwIfAborted(signal);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ARCHIVE_TIMEOUT_MS);
-  const onAbort = () => controller.abort();
-  signal?.addEventListener("abort", onAbort, { once: true });
-  const archive = path.join(dir, "repo.tar.gz");
-  try {
-    const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tarball/HEAD`, {
-      headers: { accept: "application/vnd.github+json", "user-agent": "ShipCheck/1.0" },
-      signal: controller.signal,
-      cache: "no-store",
-    });
-    if (response.status === 404) throw new RepoError("Public GitHub repository was not found.", "CLONE_FAILED");
-    if (!response.ok || !response.body) throw new RepoError(`GitHub archive download failed (${response.status}).`, "CLONE_FAILED");
-
-    const contentLength = Number(response.headers.get("content-length") ?? 0);
-    if (contentLength > MAX_REPO_SIZE_BYTES) throw new RepoError("Repository archive exceeds ShipCheck's 150 MB scan limit.", "REPO_TOO_LARGE");
-
-    const writer = createWriteStream(archive);
-    let bytes = 0;
-    try {
-      for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
-        throwIfAborted(signal);
-        bytes += chunk.byteLength;
-        if (bytes > MAX_REPO_SIZE_BYTES) {
-          writer.destroy();
-          throw new RepoError("Repository archive exceeds ShipCheck's 150 MB scan limit.", "REPO_TOO_LARGE");
-        }
-        if (!writer.write(Buffer.from(chunk))) await once(writer, "drain");
-      }
-      writer.end();
-      await once(writer, "close");
-    } catch (error) {
-      writer.destroy();
-      throw error;
-    }
-
-    await runTarExtract(archive, dir, signal);
-    await fs.rm(archive, { force: true }).catch(() => {});
-  } catch (error) {
-    await fs.rm(archive, { force: true }).catch(() => {});
-    if (error instanceof RepoError) throw error;
-    if (controller.signal.aborted || signal?.aborted) throw new RepoError("Repository download timed out and was cancelled.", "CLONE_TIMEOUT");
-    throw error;
-  } finally {
-    clearTimeout(timer);
-    signal?.removeEventListener("abort", onAbort);
-  }
-}
-
 async function runGitClone(cleanUrl: string, dir: string, signal?: AbortSignal): Promise<void> {
   throwIfAborted(signal);
+
   await new Promise<void>((resolve, reject) => {
-    const child = spawn("git", ["clone", "--depth", "1", "--single-branch", "--no-tags", "--filter=blob:none", "--", cleanUrl, dir], { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+    const child = spawn(
+      "git",
+      ["clone", "--depth", "1", "--single-branch", "--no-tags", "--", cleanUrl, dir],
+      { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] },
+    );
+
     let stderr = "";
     let settled = false;
     let timeout: NodeJS.Timeout | undefined;
+
     const finish = (error?: Error) => {
       if (settled) return;
       settled = true;
@@ -170,39 +98,133 @@ async function runGitClone(cleanUrl: string, dir: string, signal?: AbortSignal):
       signal?.removeEventListener("abort", onAbort);
       error ? reject(error) : resolve();
     };
-    const onAbort = async () => { if (!settled) { await killProcessTree(child); finish(new RepoError("Clone cancelled and the Git process was terminated.", "CLONE_CANCELLED")); } };
+
+    const onAbort = async () => {
+      if (settled) return;
+      await killProcessTree(child);
+      finish(new RepoError("Clone cancelled and the Git process was terminated.", "CLONE_CANCELLED"));
+    };
+
     signal?.addEventListener("abort", onAbort, { once: true });
-    child.stderr?.on("data", (chunk: Buffer) => { stderr = (stderr + chunk.toString()).slice(-8_000); });
-    child.once("error", (error) => finish(new RepoError((error as NodeJS.ErrnoException).code === "ENOENT" ? "Git is not installed or is not available on PATH." : `Failed to start Git: ${error.message}`, "CLONE_FAILED")));
-    child.once("close", (code) => code === 0 ? finish() : finish(new RepoError(`Git clone failed${stderr.trim() ? `: ${stderr.trim().replace(/\s+/g, " ")}` : ` (exit ${code ?? "unknown"})`}`, "CLONE_FAILED")));
-    timeout = setTimeout(async () => { if (!settled) { await killProcessTree(child); finish(new RepoError("Clone timed out and the Git process was terminated.", "CLONE_TIMEOUT")); } }, CLONE_TIMEOUT_MS);
+
+    child.stderr?.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+      if (stderr.length > 8_000) stderr = stderr.slice(-8_000);
+    });
+
+    child.once("error", (error) => {
+      const code = (error as NodeJS.ErrnoException).code;
+      finish(new RepoError(
+        code === "ENOENT" ? "Git is not installed or is not available on PATH." : `Failed to start Git: ${error.message}`,
+        code === "ENOENT" ? "GIT_NOT_FOUND" : "CLONE_FAILED",
+      ));
+    });
+
+    child.once("close", (code) => {
+      if (settled) return;
+      if (code === 0) return finish();
+      const detail = stderr.trim().replace(/\s+/g, " ");
+      finish(new RepoError(`Git clone failed${detail ? `: ${detail}` : ` (exit ${code ?? "unknown"})`}`, "CLONE_FAILED"));
+    });
+
+    timeout = setTimeout(async () => {
+      if (settled) return;
+      await killProcessTree(child);
+      finish(new RepoError("Clone timed out and the Git process was terminated.", "CLONE_TIMEOUT"));
+    }, CLONE_TIMEOUT_MS);
   });
+}
+
+async function githubPreflight(owner: string, repo: string, signal?: AbortSignal): Promise<void> {
+  throwIfAborted(signal);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GITHUB_PREFLIGHT_TIMEOUT_MS);
+  const onAbort = () => controller.abort();
+  signal?.addEventListener("abort", onAbort, { once: true });
+
+  try {
+    const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, {
+      headers: {
+        accept: "application/vnd.github+json",
+        "user-agent": "ShipCheck/1.0",
+      },
+      signal: controller.signal,
+      cache: "no-store",
+    });
+
+    if (response.status === 404) {
+      throw new RepoError("Public GitHub repository was not found.", "CLONE_FAILED");
+    }
+
+    if (!response.ok) {
+      // Rate limits or transient GitHub failures should not make a valid public
+      // repository unscannable. The authoritative post-clone size check remains.
+      return;
+    }
+
+    const data = await response.json() as { size?: unknown; private?: unknown; archived?: unknown };
+    if (data.private === true) {
+      throw new RepoError("Private GitHub repositories are not supported.", "INVALID_URL");
+    }
+
+    if (typeof data.size === "number" && data.size * 1024 > MAX_REPO_SIZE_BYTES) {
+      throw new RepoError("Repository exceeds ShipCheck's 150 MB scan limit.", "REPO_TOO_LARGE");
+    }
+  } catch (error) {
+    if (error instanceof RepoError) throw error;
+    if (controller.signal.aborted && signal?.aborted) throw new RepoError("Clone cancelled.", "CLONE_CANCELLED");
+    // Preflight is an optimization, not the final guard.
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
+  }
+}
+
+async function dirSize(dir: string): Promise<number> {
+  let total = 0;
+  const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.name === ".git") continue;
+    if (entry.isSymbolicLink()) continue;
+    if (entry.isDirectory()) total += await dirSize(full);
+    else if (entry.isFile()) {
+      const stat = await fs.stat(full).catch(() => null);
+      if (stat) total += stat.size;
+    }
+    if (total > MAX_REPO_SIZE_BYTES) return total;
+  }
+  return total;
 }
 
 export async function cloneRepo(url: string, signal?: AbortSignal): Promise<ClonedRepo> {
   const { owner, repo } = validateGitHubUrl(url);
+  await githubPreflight(owner, repo, signal);
+
   const safeName = crypto.randomBytes(8).toString("hex");
   const dir = path.join(os.tmpdir(), `shipcheck-${safeName}`);
   await fs.mkdir(dir, { recursive: true });
+
   const cleanUrl = `https://github.com/${owner}/${repo}.git`;
-  const cleanup = async () => { await fs.rm(dir, { recursive: true, force: true }).catch(() => {}); };
+  const cleanup = async () => {
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+  };
 
   try {
-    // GitHub's tarball endpoint is normally much faster than a git clone for a
-    // static analyzer because ShipCheck needs the current source tree, not history.
-    try {
-      await downloadGitHubArchive(owner, repo, dir, signal);
-    } catch (archiveError) {
-      if (archiveError instanceof RepoError && ["REPO_TOO_LARGE", "CLONE_CANCELLED", "CLONE_TIMEOUT"].includes(archiveError.code)) throw archiveError;
-      await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
-      await fs.mkdir(dir, { recursive: true });
-      await runGitClone(cleanUrl, dir, signal);
-      await fs.rm(path.join(dir, ".git"), { recursive: true, force: true }).catch(() => {});
+    await runGitClone(cleanUrl, dir, signal);
+
+    // Git history is not needed for static analysis or patch/rescan. Removing
+    // .git immediately reduces workspace size and avoids retaining metadata.
+    await fs.rm(path.join(dir, ".git"), { recursive: true, force: true }).catch(() => {});
+
+    const size = await dirSize(dir);
+    if (size > MAX_REPO_SIZE_BYTES) {
+      throw new RepoError("Repository exceeds the size limit supported by this scan.", "REPO_TOO_LARGE");
     }
   } catch (err) {
     await cleanup();
     if (err instanceof RepoError) throw err;
-    throw new RepoError(`Failed to obtain repository: ${(err as Error).message}`, "CLONE_FAILED");
+    throw new RepoError(`Failed to clone repository: ${(err as Error).message}`, "CLONE_FAILED");
   }
 
   return { dir, cleanup };

@@ -4,8 +4,7 @@ import { runRule } from "./helpers";
 
 describe("R2 — Hardcoded Secret", () => {
   it("flags a real-looking secret with a known prefix", () => {
-    const knownSecret = ["sk-", "abcdefghij1234567890XY"].join("");
-    const src = `const stripeKey = "${knownSecret}";`;
+    const src = `const stripeKey = "sk-abcdefghij1234567890XY";`;
     const findings = runRule(r2SecretsRule, "src/config.ts", src);
     expect(findings).toHaveLength(1);
     expect(findings[0].status).toBe("match");
@@ -19,15 +18,13 @@ describe("R2 — Hardcoded Secret", () => {
   });
 
   it("skips .env.example files entirely", () => {
-    const knownSecret = ["sk-", "abcdefghij1234567890XY"].join("");
-    const src = `const apiKey = "${knownSecret}";`;
+    const src = `const apiKey = "sk-abcdefghij1234567890XY";`;
     const findings = runRule(r2SecretsRule, ".env.example", src);
     expect(findings).toHaveLength(0);
   });
 
   it("skips test fixtures", () => {
-    const knownSecret = ["sk-", "abcdefghij1234567890XY"].join("");
-    const src = `const apiKey = "${knownSecret}";`;
+    const src = `const apiKey = "sk-abcdefghij1234567890XY";`;
     const findings = runRule(r2SecretsRule, "src/__fixtures__/config.ts", src);
     expect(findings).toHaveLength(0);
   });
