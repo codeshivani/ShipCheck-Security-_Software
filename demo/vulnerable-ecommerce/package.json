@@ -1,0 +1,10 @@
+{
+  "name": "vulnerable-ecommerce-demo",
+  "version": "1.0.0",
+  "description": "Hardened ShipCheck demo repository \u2014 ownership-constrained orders and staff-authorized product management.",
+  "main": "src/server.ts",
+  "dependencies": {
+    "express": "^4.19.2",
+    "mongoose": "^8.0.0"
+  }
+}
