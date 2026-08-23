@@ -1,0 +1,10 @@
+{
+  "name": "vulnerable-exec-demo",
+  "version": "1.0.0",
+  "description": "ShipCheck demo repository — a small internal admin/dev-tools service with intentional secret, JWT, and dynamic-execution vulnerabilities.",
+  "main": "src/server.ts",
+  "dependencies": {
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2"
+  }
+}

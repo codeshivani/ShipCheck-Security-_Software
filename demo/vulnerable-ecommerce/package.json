@@ -1,0 +1,10 @@
+{
+  "name": "vulnerable-ecommerce-demo",
+  "version": "1.0.0",
+  "description": "ShipCheck demo repository — a small orders/products service with intentional authorization and IDOR vulnerabilities.",
+  "main": "src/server.ts",
+  "dependencies": {
+    "express": "^4.19.2",
+    "mongoose": "^8.0.0"
+  }
+}
