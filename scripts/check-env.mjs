@@ -6,7 +6,7 @@ const required = [
 const missing = required.filter((name) => !process.env[name]?.trim());
 if (missing.length) {
   console.error(`Missing local environment variables: ${missing.join(', ')}`);
-  console.error('Create .env.local from .env.example, fill the Supabase values, and restart the dev server.');
+  console.error('Copy .env.example to .env.local, fill the Supabase values, and restart the dev server.');
   process.exit(1);
 }
 

@@ -13,8 +13,8 @@ This avoids putting long-running Git/static-analysis work into a serverless-only
 
 1. Create a Supabase project.
 2. Open SQL Editor.
-3. Run `migrations/001_init.sql`.
-4. Run `migrations/002_auth_hardening.sql`.
+3. Run `../migrations/001_init.sql`.
+4. Run `../migrations/002_auth_hardening.sql`.
 5. Set the Supabase Site URL and redirect URLs for `/auth/callback`.
 6. Keep email confirmation enabled for production.
 7. Configure password strength, rate limits and CAPTCHA in Authentication settings.
@@ -27,7 +27,7 @@ This avoids putting long-running Git/static-analysis work into a serverless-only
 
 1. Push this repository to GitHub.
 2. Create a Railway project and deploy the GitHub repository.
-3. Railway will use `Dockerfile`.
+3. Railway will use the repository-root `Dockerfile`.
 4. Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and AI variables in Railway Variables.
 5. Generate a Railway public domain.
 6. Verify `/api/health` returns `database: configured`.
@@ -41,7 +41,8 @@ npm.cmd install
 npm.cmd run dev
 ```
 
-Then set the Supabase variables in `.env.local` and run the migration in Supabase.
+Run these commands from the repository root. Create `.env.local` from
+`.env.example`, set the Supabase variables, and run the migration in Supabase.
 
 ## Important
 

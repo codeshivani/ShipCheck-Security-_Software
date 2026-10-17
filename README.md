@@ -1,16 +1,16 @@
-# ShipCheck V1
+# ShipCheck
 
 **The security gate between AI-generated code and production.**
 
-ShipCheck V1 is a focused security-analysis tool for JavaScript/TypeScript web
-applications, built for a 20-hour hackathon. It runs five deterministic
-static-analysis rules against a public GitHub repository, produces evidence-backed
-findings and a transparent risk score, then hands each finding to an AI layer for
-a plain-English explanation and a proposed patch. A deterministic rescan — never
-the AI's own say-so — is the sole authority on whether a fix actually worked.
+ShipCheck is a focused security-analysis tool for JavaScript/TypeScript web
+applications. It runs eight deterministic static-analysis rules against a
+public GitHub repository, produces evidence-backed findings and a transparent
+risk score, then hands each finding to an AI layer for a plain-English
+explanation and a proposed patch. A deterministic rescan — never the AI's own
+say-so — is the sole authority on whether a fix actually worked.
 
 ```
-GITHUB REPO → SECURE INGESTION → R1–R5 → EVIDENCE + RISK → PROJECT SECURITY FLOW → AI EXPLANATION → PATCH → DETERMINISTIC RESCAN
+GITHUB REPO → SECURE INGESTION → R1–R8 → EVIDENCE + RISK → PROJECT SECURITY FLOW → AI EXPLANATION → PATCH → DETERMINISTIC RESCAN
 ```
 
 ## Non-negotiable architecture
@@ -29,17 +29,16 @@ AI's claim — determines whether a finding is resolved.** See
 
 ```bash
 npm install
-cp .env.example .env.local   # optional — see "AI layer" below
 npm run dev                  # http://localhost:3000
 ```
 
-The deterministic scanner, risk scoring, and rescan comparison all work with
-**zero configuration**. Only the AI explanation/patch layer needs an API key —
-without one, ShipCheck falls back to deterministic remediation guidance per
-finding type (see `src/ai/validator.ts`) so the scan → fix → rescan flow keeps
-working end to end.
+Create `.env.local` from `.env.example` and add your Supabase project URL and
+publishable key before using authenticated app features. The scanner, risk
+scoring, and rescan comparison do not require an AI key. Without one, ShipCheck
+uses deterministic remediation guidance per finding type (see
+`src/ai/validator.ts`).
 
-### AI layer
+### Optional AI layer
 
 Set one of these in `.env.local`:
 
@@ -60,13 +59,13 @@ npm test          # vitest run
 npm run test:watch
 ```
 
-41 tests cover: each rule's true-positive/true-negative cases (`tests/scanner/`),
+The suite covers each rule's true-positive/true-negative cases (`tests/scanner/`),
 risk scoring (`tests/risk/`), AI response validation and fallback
 (`tests/ai/`), patch application including path-traversal rejection
 (`tests/ai/patch.test.ts`), rescan comparison (`tests/rescan/`), and the three
 seeded demo repositories scanned end-to-end (`tests/scanner/demo-repos.test.ts`).
 
-## The five rules
+## The eight rules
 
 | Rule | CWE | Severity | What it looks for |
 |---|---|---|---|
@@ -75,11 +74,17 @@ seeded demo repositories scanned end-to-end (`tests/scanner/demo-repos.test.ts`)
 | R3 | CWE-347 | High | `jwt.decode()` results trusted for an authorization decision instead of `jwt.verify()` |
 | R4 | CWE-639 | High | Request-controlled identifiers reaching a DB lookup with no ownership/tenant constraint |
 | R5 | CWE-95 | Critical | Lightweight taint analysis: `req.body`/`query`/`params` flowing into `eval`, `new Function`, or `child_process.exec`-family sinks |
+| R6 | CWE-89 | Critical | Request data reaching raw SQL/query sinks |
+| R7 | CWE-22 | High | Request data reaching filesystem paths |
+| R8 | CWE-918 | High | Request-controlled outbound URLs |
 
 Each rule is deliberately conservative: where framework context is
 ambiguous, findings are marked `status: "review"` instead of `"match"`, and
 only `"match"` + `"high"` confidence findings affect the ShipCheck Risk Score
-(see spec section 7 / `src/risk/score.ts`).
+(see `src/risk/score.ts`).
+
+All score-bearing findings require deterministic evidence. A clean result does
+not prove complete security.
 
 ## Risk score
 
@@ -116,6 +121,24 @@ import { scanDirectory } from "@/scanner/scanner";
 const report = await scanDirectory("demo/vulnerable-auth", "demo://vulnerable-auth");
 ```
 
+## Scanning workflow
+
+### Scan by repository URL
+
+The New Scan screen accepts a public GitHub repository URL directly:
+
+`https://github.com/owner/repository`
+
+The existing GitHub-profile batch scanner remains available as a second
+workflow.
+
+### Analyzer exclusions
+
+A `.shipcheckignore` file can exclude tool-generated or analyzer-only code from
+application findings. ShipCheck excludes its own `src/scanner/rules/` and
+`src/scanner/analysis/` directories so the scanner does not mistake its rule
+definitions and analysis implementation for application vulnerabilities.
+
 ## Project-specific security flow
 
 Every finding can carry an evidence-grounded 2D security flow. The graph is derived from the scanned repository rather than generated by the LLM. Vulnerability markers sit on the deterministic vulnerable edge, and each graph has a deterministic fingerprint. When the scanner cannot prove a complete path, it renders a partial flow instead of inventing architecture.
@@ -125,24 +148,24 @@ V1 repository ingestion accepts public GitHub repositories up to 150 MB. The sca
 ## Project structure
 
 ```
+docs/             Deployment and operations documentation
 src/
-  scanner/        AST parsing, repo cloning/walking, the 5 rules, orchestrator
-  risk/           Score + grade calculation
-  ai/             Provider-agnostic LLM client, prompts, validation, cache, patch apply
-  rescan/         Before/after comparison — the deterministic source of truth
-  types/          Finding Evidence Model, report shapes
-  app/            Next.js UI (single-flow dashboard) + API routes
-  app/api/        /scan  /explain  /patch  /rescan
-demo/             Three seeded vulnerable repositories
-tests/            Vitest suite mirroring the structure above
+  ai/             AI explanation, validation, caching, and patching
+  app/            Next.js pages, UI components, and API routes
+  lib/            Authentication, persistence, and Supabase helpers
+  rescan/         Deterministic before/after comparison
+  risk/           Score and grade calculation
+  scanner/        Repository ingestion, AST analysis, and R1–R8
+  types/          Finding and report types
+demo/             Intentionally vulnerable scanner test/demo repositories
+migrations/       Supabase/PostgreSQL schema migrations
+scripts/          Local project utilities
+tests/            Vitest suites organized by feature area
 ```
 
-## Explicitly out of scope (see spec section 4)
-
-Private repos / GitHub OAuth or App installs, user accounts, billing, the
-full OWASP Top 10, non-JS/TS languages, autonomous PRs, production
-deployment of generated patches, and a general SAST replacement. These are
-deliberately deferred — see the original spec for the rationale.
+ShipCheck focuses on JavaScript/TypeScript and public GitHub repositories. It
+does not provide full OWASP coverage, dependency/SCA scanning, autonomous PRs,
+production deployment of generated patches, or a general SAST replacement.
 
 ## Safety notes
 
@@ -156,7 +179,8 @@ deliberately deferred — see the original spec for the rationale.
 
 ## Production deployment
 
-ShipCheck V1 is deployment-ready with a persistent PostgreSQL-backed report store. See `DEPLOYMENT.md` and `migrations/001_init.sql`.
+ShipCheck supports a persistent PostgreSQL-backed report store. See
+[the deployment guide](docs/deployment.md) and `migrations/001_init.sql`.
 
 Recommended topology:
 
@@ -165,33 +189,3 @@ Recommended topology:
 - Ephemeral local workspace for active repository analysis only.
 
 The database stores report metadata/results, not cloned repositories.
-
-
-## ShipCheck 2.1 security rule pack
-
-The scanner now runs eight deterministic rules:
-
-| Rule | CWE | Severity | Detection |
-|---|---|---|---|
-| R1 | CWE-862 | Critical | Missing endpoint authorization |
-| R2 | CWE-798 | Critical | Hardcoded secrets/API keys |
-| R3 | CWE-347 | High | Unsafe JWT handling |
-| R4 | CWE-639 | High | Potential IDOR |
-| R5 | CWE-95 | Critical | Untrusted dynamic execution |
-| R6 | CWE-89 | Critical | Request data into raw SQL/query sinks |
-| R7 | CWE-22 | High | Request data into filesystem paths |
-| R8 | CWE-918 | High | Request-controlled outbound URLs |
-
-All score-bearing findings require deterministic evidence. The scanner does not claim that a clean result proves complete security.
-
-### Scan by repository URL
-
-The New Scan screen accepts a public GitHub repository URL directly:
-
-`https://github.com/owner/repository`
-
-The existing GitHub-profile batch scanner remains available as a second workflow.
-
-### Analyzer exclusions
-
-A `.shipcheckignore` file can exclude tool-generated or analyzer-only code from application findings. This build excludes ShipCheck's own `src/scanner/rules/` and `src/scanner/analysis/` implementation directories so the scanner does not mistake its rule descriptions/patterns for application vulnerabilities.
