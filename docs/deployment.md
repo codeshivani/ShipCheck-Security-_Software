@@ -16,6 +16,8 @@ This avoids putting long-running Git/static-analysis work into a serverless-only
 3. Run `../migrations/001_init.sql`.
 4. Run `../migrations/002_auth_hardening.sql`.
 5. Set the Supabase Site URL and redirect URLs for `/auth/callback`.
+   Allow `http://localhost:3000/auth/callback` for local email confirmation and
+   the production app's exact `/auth/callback` URL in production.
 6. Keep email confirmation enabled for production.
 7. Configure password strength, rate limits and CAPTCHA in Authentication settings.
 8. Copy the project URL into both `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_URL`.

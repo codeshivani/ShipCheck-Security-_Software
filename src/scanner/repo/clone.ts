@@ -89,14 +89,19 @@ async function runGitClone(cleanUrl: string, dir: string, signal?: AbortSignal):
 
     let stderr = "";
     let settled = false;
-    let timeout: NodeJS.Timeout | undefined;
+    const timeout: NodeJS.Timeout = setTimeout(async () => {
+      if (settled) return;
+      await killProcessTree(child);
+      finish(new RepoError("Clone timed out and the Git process was terminated.", "CLONE_TIMEOUT"));
+    }, CLONE_TIMEOUT_MS);
 
     const finish = (error?: Error) => {
       if (settled) return;
       settled = true;
       if (timeout) clearTimeout(timeout);
       signal?.removeEventListener("abort", onAbort);
-      error ? reject(error) : resolve();
+      if (error) reject(error);
+      else resolve();
     };
 
     const onAbort = async () => {
@@ -127,11 +132,6 @@ async function runGitClone(cleanUrl: string, dir: string, signal?: AbortSignal):
       finish(new RepoError(`Git clone failed${detail ? `: ${detail}` : ` (exit ${code ?? "unknown"})`}`, "CLONE_FAILED"));
     });
 
-    timeout = setTimeout(async () => {
-      if (settled) return;
-      await killProcessTree(child);
-      finish(new RepoError("Clone timed out and the Git process was terminated.", "CLONE_TIMEOUT"));
-    }, CLONE_TIMEOUT_MS);
   });
 }
 

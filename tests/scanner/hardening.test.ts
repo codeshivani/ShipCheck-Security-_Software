@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import { walkRepo, MAX_FILE_SIZE_BYTES, MAX_TOTAL_SCANNED_BYTES } from "@/scanner/repo/walk";
+import { walkRepo, MAX_FILE_SIZE_BYTES } from "@/scanner/repo/walk";
 import { validateGitHubUrl } from "@/scanner/repo/clone";
 import { scanDirectory } from "@/scanner/scanner";
 

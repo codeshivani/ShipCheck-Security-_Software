@@ -7,17 +7,24 @@ import { getBatchReport, type BatchReport } from "@/lib/batchStore";
 
 export default function BatchReportPage() {
   const [batch, setBatch] = useState<BatchReport | null>(null);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("batch");
     if (!id) return;
     const cached = getBatchReport(id);
+    // Query-string and browser-cache hydration runs after the server render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (cached) { setBatch(cached); return; }
     fetch(`/api/batches?batch=${encodeURIComponent(id)}`).then(async response => {
-      if (!response.ok) return;
-      const data = await response.json();
+      const data: { batch?: { batch_id: string; username: string; created_at: string; items: BatchReport["items"] }; error?: string } = await response.json();
+      if (!response.ok) {
+        setLoadError(data.error ?? "Unable to load the batch report.");
+        return;
+      }
       if (data.batch) setBatch({ batchId: data.batch.batch_id, username: data.batch.username, createdAt: data.batch.created_at, items: data.batch.items });
-    }).catch(() => {});
+      else setLoadError("The batch report was not found.");
+    }).catch(() => setLoadError("Unable to reach the server to load the batch report."));
   }, []);
 
   const complete = useMemo(() => batch?.items.filter(item => item.status === "complete") ?? [], [batch]);
@@ -28,13 +35,14 @@ export default function BatchReportPage() {
   const medium = complete.reduce((sum, item) => sum + (item.report?.risk.counts.Medium ?? 0), 0);
   const findings = complete.reduce((sum, item) => sum + (item.report?.findings.length ?? 0), 0);
 
-  if (!batch) return <><AppNav /><main className="mx-auto w-[94%] max-w-5xl py-16"><div className="sc-card p-10 text-center"><h1 className="text-2xl font-bold">Batch report unavailable</h1><p className="mt-2 text-sm text-sc-muted">The report data is no longer available in this browser session.</p><Link href="/scan" className="mt-6 inline-block rounded-xl bg-[#172b4d] px-5 py-3 font-semibold text-white">Start a New Scan</Link></div></main></>;
+  if (!batch) return <><AppNav /><main className="mx-auto w-[94%] max-w-5xl py-16"><div className="sc-card p-10 text-center"><h1 className="text-2xl font-bold">Batch report unavailable</h1><p role="alert" className="mt-2 text-sm text-sc-muted">{loadError || "The report data is no longer available in this browser session."}</p><Link href="/scan" className="mt-6 inline-block rounded-xl bg-[#172b4d] px-5 py-3 font-semibold text-white">Start a New Scan</Link></div></main></>;
 
   return <><AppNav /><main className="mx-auto w-[94%] max-w-6xl py-8">
     <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div><p className="text-xs font-bold uppercase tracking-[.16em] text-sc-pass">Batch security report</p><h1 className="mt-2 text-3xl font-bold">GitHub profile: @{batch.username}</h1><p className="mt-2 text-sm text-sc-muted">Generated {new Date(batch.createdAt).toLocaleString()}</p></div>
       <Link href="/scan" className="rounded-xl border border-sc-border bg-white px-5 py-3 text-sm font-semibold hover:bg-sc-surface-2">← Scan more repositories</Link>
     </div>
+    {batch.persistenceWarning && <p role="alert" className="mt-4 rounded-xl border border-[#ead8a6] bg-[#fffaf0] px-4 py-3 text-sm text-sc-high">{batch.persistenceWarning}</p>}
 
     <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
       <Stat label="Repositories" value={batch.items.length} />

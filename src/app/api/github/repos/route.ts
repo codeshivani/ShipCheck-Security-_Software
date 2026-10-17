@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { requireUser } from "@/lib/auth";
 
 const UsernameSchema = z.string().trim().regex(/^[A-Za-z0-9-]{1,39}$/, "Enter a valid GitHub username.");
 
 type GitHubRepo = { id: number; name: string; full_name: string; html_url: string; description: string | null; language: string | null; stargazers_count: number; forks_count: number; updated_at: string; private: boolean; fork: boolean; archived: boolean; default_branch: string };
 
 export async function GET(request: NextRequest) {
-  const auth = await requireUser(); if (auth.response) return auth.response;
   const username = request.nextUrl.searchParams.get("username") ?? "";
   const parsed = UsernameSchema.safeParse(username);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid GitHub username." }, { status: 400 });

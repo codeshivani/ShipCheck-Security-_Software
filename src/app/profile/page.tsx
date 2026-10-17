@@ -1,11 +1,14 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AppNav } from "@/app/components/AppNav";
-import { getRepositories, getStoredScans, removeRepository, StoredScan } from "@/lib/clientStore";
+import { getRepositories, getStoredScans, removeRepository, storedScanFromReport, StoredScan } from "@/lib/clientStore";
 import { MfaSettings } from "../components/MfaSettings";
+import type { ScanReport } from "@/types/reports";
 
 export default function ProfilePage() {
+  const router = useRouter();
   const [user, setUser] = useState({username:"",email:"",github:""});
   const [scans, setScans] = useState<StoredScan[]>([]);
   const [repos, setRepos] = useState<string[]>([]);
@@ -13,13 +16,15 @@ export default function ProfilePage() {
 
   useEffect(() => {
     fetch("/api/me").then(async response => { if (!response.ok) return; const data = await response.json(); if (data.user) setUser({ username: data.user.username || data.user.email?.split("@")[0] || "User", email: data.user.email || "", github: data.user.github || "" }); }).catch(() => {});
+    // Browser storage is only available after hydration; the server render uses empty defaults.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setScans(getStoredScans());
     setRepos(getRepositories());
     fetch("/api/history").then(async response => {
       if (!response.ok) return;
-      const data = await response.json();
+      const data: { scans?: ScanReport[] } = await response.json();
       if (Array.isArray(data.scans)) {
-        setScans(data.scans.map((r: any) => ({ scanId: r.scanId, repoUrl: r.repoUrl, score: r.risk.score, grade: r.risk.grade, vulnerabilities: r.findings.length, critical: r.risk.counts.Critical, high: r.risk.counts.High, medium: r.risk.counts.Medium, fixed: 0, createdAt: r.createdAt })));
+        setScans(data.scans.map(report => storedScanFromReport(report)));
       }
     }).catch(() => {});
   }, []);
@@ -31,13 +36,12 @@ export default function ProfilePage() {
   const high = scans.reduce((a,s)=>a+s.high,0);
   const medium = scans.reduce((a,s)=>a+s.medium,0);
   const low = Math.max(0, vulns - critical - high - medium);
-  const chart = scans.slice(0, 7).reverse();
 
   async function save() {
     const response = await fetch("/api/profile", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(user) });
     if (response.ok) setEditing(false);
   }
-  function scanAgain(url:string) { window.location.href = `/scan?repo=${encodeURIComponent(url)}`; }
+  function scanAgain(url:string) { router.push(`/scan?repo=${encodeURIComponent(url)}`); }
   function remove(url:string) { removeRepository(url); setRepos(getRepositories()); }
 
   return <><AppNav/><main className="mx-auto w-[94%] max-w-[1200px] py-8">

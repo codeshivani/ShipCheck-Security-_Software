@@ -30,6 +30,13 @@ const OBVIOUS_PLACEHOLDER_PATTERN = /(your[-_]?api[-_]?key|xxxx|placeholder|chan
 // Variable/property names that suggest the literal is intended as a secret.
 const SECRET_NAME_PATTERN = /(secret|api[-_]?key|apikey|token|password|passwd|access[-_]?key|private[-_]?key|auth[-_]?key)/i;
 
+function isExampleOrFixture(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, "/").toLowerCase();
+  const basename = normalized.slice(normalized.lastIndexOf("/") + 1);
+  return [".env.example", ".env.sample", ".env.template"].includes(basename) ||
+    normalized.split("/").includes("__fixtures__");
+}
+
 function shannonEntropy(str: string): number {
   const freq: Record<string, number> = {};
   for (const ch of str) freq[ch] = (freq[ch] ?? 0) + 1;
@@ -61,6 +68,8 @@ export const r2SecretsRule: Rule = {
   definition: R2_DEFINITION,
 
   analyze(file: ParsedFile): Finding[] {
+    if (isExampleOrFixture(file.path)) return [];
+
     const findings: Finding[] = [];
     const seenLines = new Set<number>();
 

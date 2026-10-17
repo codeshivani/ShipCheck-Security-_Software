@@ -20,6 +20,17 @@ export async function requireUser(options: { mfa?: boolean } = {}) {
   return { user: auth.user, supabase: auth.supabase, response: null };
 }
 
+export async function getOptionalUser() {
+  const auth = await getCurrentUser();
+  if (auth.user && auth.aal?.currentLevel === 'aal1' && auth.aal?.nextLevel === 'aal2') {
+    return {
+      user: null,
+      response: NextResponse.json({ error: 'MFA verification required.', code: 'MFA_REQUIRED' }, { status: 403 }),
+    };
+  }
+  return { user: auth.user, response: null };
+}
+
 export function requireSameOrigin(req: NextRequest) {
   const origin = req.headers.get('origin');
   if (!origin) return null;

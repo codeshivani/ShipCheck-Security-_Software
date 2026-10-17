@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getSupabasePublicConfig } from './config';
 
 const PUBLIC_PREFIXES = ['/login', '/auth', '/reports/shared', '/api/health', '/setup'];
-const PROTECTED_PAGES = ['/dashboard', '/profile', '/scan', '/flow-lab', '/reports/batch'];
+const PROTECTED_PAGES = ['/dashboard', '/profile', '/flow-lab'];
 
 function isPublic(pathname: string) {
   return PUBLIC_PREFIXES.some(prefix => pathname === prefix || pathname.startsWith(`${prefix}/`));
@@ -62,7 +62,7 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (user && isProtectedPage(pathname) && pathname !== '/auth/mfa') {
-    const { data: aal } = await supabase.auth.getAuthenticatorAssuranceLevel();
+    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
     if (aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') {
       const url = request.nextUrl.clone();
       url.pathname = '/auth/mfa';

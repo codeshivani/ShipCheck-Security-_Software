@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Finding, SecurityFlowNode, SecurityFlow } from "@/types/findings";
 import type { AIExplanation } from "@/types/reports";
 
@@ -34,11 +34,13 @@ function genericErrorNode(finding: Finding) {
 export function SecurityFlowMap({ findings, scanId }: { findings: Finding[]; scanId?: string }) {
   const candidates = findings.filter(f => f.status !== "suppressed");
   const [selectedId, setSelectedId] = useState(candidates[0]?.id ?? "");
-  const [explanation, setExplanation] = useState<AIExplanation | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [explanationState, setExplanationState] = useState<{ findingId: string; value: AIExplanation | null } | null>(null);
   const selected = candidates.find(f => f.id === selectedId) ?? candidates[0] ?? null;
+  const selectedFindingId = selected?.id;
+  const explanation = selected && explanationState?.findingId === selected.id ? explanationState.value : null;
+  const loading = Boolean(selected && scanId && explanationState?.findingId !== selected.id);
 
-  const model = useMemo(() => {
+  const model = (() => {
     if (!selected) return null;
     const original = selected.securityFlow;
     if (original) {
@@ -56,19 +58,18 @@ export function SecurityFlowMap({ findings, scanId }: { findings: Finding[]; sca
       fingerprint: "derived-from-finding",
     };
     return { flow, errorNode: genericErrorNode(selected) };
-  }, [selected]);
+  })();
 
   useEffect(() => {
     let cancelled = false;
-    if (!selected || !scanId) return;
-    setLoading(true); setExplanation(null);
-    fetch("/api/explain", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scanId, findingId: selected.id }) })
+    const findingId = selectedFindingId;
+    if (!findingId || !scanId) return;
+    fetch("/api/explain", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scanId, findingId }) })
       .then(async r => { const data = await r.json(); if (!r.ok) throw new Error(data.error ?? "Unable to explain finding"); return data.result as AIExplanation; })
-      .then(result => { if (!cancelled) setExplanation(result); })
-      .catch(() => { if (!cancelled) setExplanation(null); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+      .then(result => { if (!cancelled) setExplanationState({ findingId, value: result }); })
+      .catch(() => { if (!cancelled) setExplanationState({ findingId, value: null }); });
     return () => { cancelled = true; };
-  }, [selected?.id, scanId]);
+  }, [selectedFindingId, scanId]);
 
   if (!selected || !model) {
     return <section className="sc-card p-7"><p className="text-sm font-semibold">Security flow report</p><p className="mt-2 text-sm text-sc-muted">No findings were produced. The scan contains no error node to report.</p></section>;
@@ -101,7 +102,7 @@ export function SecurityFlowMap({ findings, scanId }: { findings: Finding[]; sca
           <defs>
             <marker id="sc-arrow-light" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#9aa5b1" /></marker>
           </defs>
-          {flow.edges.map((edge, i) => {
+          {flow.edges.map(edge => {
             const from = flow.nodes.findIndex(n => n.id === edge.from);
             const to = flow.nodes.findIndex(n => n.id === edge.to);
             if (from < 0 || to < 0) return null;

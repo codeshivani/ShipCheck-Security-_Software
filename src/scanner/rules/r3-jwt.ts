@@ -135,7 +135,7 @@ export const r3JwtRule: Rule = {
             if (!decodedVar || !t.isIdentifier(inner.node.left) || inner.node.left.name !== decodedVar) return;
             // If the same variable is later replaced by jwt.verify(), that is
             // positive evidence for verification.
-            if (isJwtVerifyPath(inner.right)) verifyUsesDecodedValue = true;
+            if (isJwtVerifyPath(inner.node.right)) verifyUsesDecodedValue = true;
           },
         });
 

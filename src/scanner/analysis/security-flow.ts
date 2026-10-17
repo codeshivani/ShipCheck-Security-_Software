@@ -123,7 +123,7 @@ function buildR2(finding: Finding, file: ParsedFile): SecurityFlow {
     // A full binding resolver is unnecessary for the evidence model here.
     const lineText = file.source.split("\n")[finding.line - 1] ?? "";
     const assignment = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=/.exec(lineText);
-    if (assignment?.[1]) secretName = `${assignment[1]}: redacted secret`;
+    if (assignment?.[1]) secretName = `${assignment[1]}: Redacted secret`;
   }
   const nodes = [
     makeNode("n0", "file", file.path, file.path, finding.line),
@@ -173,6 +173,7 @@ function buildR3(finding: Finding, file: ParsedFile): SecurityFlow {
 function buildR4(finding: Finding, file: ParsedFile): SecurityFlow {
   let requestNode: SecurityFlowNode | null = null;
   let lookupNode: SecurityFlowNode | null = null;
+  let lookupLine: number | undefined;
   let routeNode: SecurityFlowNode | null = null;
 
   traverse(file.ast, {
@@ -189,6 +190,7 @@ function buildR4(finding: Finding, file: ParsedFile): SecurityFlow {
         if (requestArg) {
           requestNode = makeNode("n1", "request", memberChainToString(unwrapExpression(requestArg as t.Node)), file.path, lineOf(requestArg as t.Node), nodeSource(file.source, requestArg as t.Node));
           lookupNode = makeNode("n2", "resource", "Resource lookup", file.path, lineOf(path.node));
+          lookupLine = lineOf(path.node);
         }
       }
     },
@@ -198,7 +200,7 @@ function buildR4(finding: Finding, file: ParsedFile): SecurityFlow {
     routeNode ?? makeNode("n0", "entry", "Endpoint", file.path, finding.line),
     requestNode ?? makeNode("n1", "request", "request-controlled identifier", file.path, finding.line),
     lookupNode ?? makeNode("n2", "resource", "Resource lookup", file.path, finding.line, finding.snippet),
-    makeNode("n3", "decision", "Ownership constraint not proven", file.path, lookupNode?.line ?? finding.line),
+    makeNode("n3", "decision", "Ownership constraint not proven", file.path, lookupLine ?? finding.line),
   ];
 
   const edges = [
@@ -248,6 +250,27 @@ function buildR5(finding: Finding, file: ParsedFile): SecurityFlow {
   return finish(finding, "Dynamic execution flow", sourceNode && sinkNode ? "full" : "partial", nodes, edges, "e1");
 }
 
+function buildGenericFlow(finding: Finding): SecurityFlow {
+  const descriptions: Partial<Record<Finding["ruleId"], { source: string; sink: string }>> = {
+    R6: { source: "Request-controlled query data", sink: "Database query" },
+    R7: { source: "Request-controlled path data", sink: "Filesystem operation" },
+    R8: { source: "Request-controlled URL", sink: "Outbound network request" },
+  };
+  const description = descriptions[finding.ruleId];
+  if (!description) throw new Error(`No generic security flow is defined for ${finding.ruleId}.`);
+  const { source, sink } = description;
+  const nodes = [
+    makeNode("n0", "request", source, finding.file, finding.line),
+    makeNode("n1", "transform", "Untrusted value reaches sensitive operation", finding.file, finding.line),
+    makeNode("n2", "sink", sink, finding.file, finding.line),
+  ];
+  const edges = [
+    makeEdge("e0", "n0", "n1", "untrusted input propagates", finding),
+    makeEdge("e1", "n1", "n2", "unsafe data reaches operation", finding, true),
+  ];
+  return finish(finding, `${finding.ruleId} data flow`, "partial", nodes, edges, "e1");
+}
+
 export function buildSecurityFlow(finding: Finding, file: ParsedFile): SecurityFlow {
   switch (finding.ruleId) {
     case "R1": return buildR1(finding, file);
@@ -255,5 +278,8 @@ export function buildSecurityFlow(finding: Finding, file: ParsedFile): SecurityF
     case "R3": return buildR3(finding, file);
     case "R4": return buildR4(finding, file);
     case "R5": return buildR5(finding, file);
+    case "R6":
+    case "R7":
+    case "R8": return buildGenericFlow(finding);
   }
 }

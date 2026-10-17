@@ -23,7 +23,14 @@ productRouter.delete("/:sku", requireStaff, async (req, res) => {
   res.status(204).end();
 });
 
-function requireStaff(req: any, res: any, next: any) {
-  if (!req.user?.isStaff) return res.status(403).json({ error: "Staff only" });
+function requireStaff(
+  req: { user?: { isStaff?: boolean } },
+  res: { status(code: number): { json(body: { error: string }): void } },
+  next: () => void,
+) {
+  if (!req.user?.isStaff) {
+    res.status(403).json({ error: "Staff only" });
+    return;
+  }
   next();
 }

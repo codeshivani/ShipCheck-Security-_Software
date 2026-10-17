@@ -1,4 +1,3 @@
-import traverse from "@babel/traverse";
 import * as t from "@babel/types";
 import type { RepositoryAnalysis, FunctionRecord } from "./repository";
 import { isRequestMember, traverseNode, unwrapExpression } from "./ast-utils";

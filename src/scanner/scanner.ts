@@ -181,7 +181,7 @@ export async function scanDirectory(rootDir: string, repoUrl: string, options: S
   timings.totalMs = Math.round(performance.now() - totalStart);
 
   return {
-    scanId: crypto.randomBytes(8).toString("hex"),
+    scanId: crypto.randomBytes(24).toString("hex"),
     repoUrl,
     createdAt: new Date().toISOString(),
     filesScanned,

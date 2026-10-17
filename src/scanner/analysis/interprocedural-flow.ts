@@ -1,4 +1,3 @@
-import traverse from "@babel/traverse";
 import * as t from "@babel/types";
 import type { RepositoryAnalysis, FunctionRecord } from "./repository";
 import { isRequestMember, memberChainToString, traverseNode, unwrapExpression } from "./ast-utils";
@@ -37,8 +36,6 @@ const DB_METHODS = new Set(["findById", "findByPk", "findOne", "findFirst", "fin
 const AUTH_NAMES = /^(authenticate|isAuthenticated|requireAuth|ensureAuth|checkAuth|verifyToken|verifyJwt|validateToken|assertAuthenticated|getServerSession|requireUser|requireMfa)$/i;
 const AUTHZ_NAMES = /^(authorize|authorizeRequest|authorizeResource|checkPermission|hasPermission|assertAuthorized|assertPermission|can|canAccess|isAllowed|enforceAccess|checkAccess)$/i;
 const OWNERSHIP_FIELDS = /^(user_?id|owner_?id|tenant_?id|account_?id|created_?by|createdby)$/i;
-const EXEC_NAMES = new Set(["exec", "execSync", "spawn", "spawnSync"]);
-
 function chain(node: t.Node): string { return memberChainToString(unwrapExpression(node)); }
 
 function roleOf(node: t.Node, state: State): Set<FlowRole> {
@@ -101,10 +98,6 @@ function resolveCall(repository: RepositoryAnalysis, filePath: string, callee: t
   if (!target) return null;
   const localName = repository.exports.get(target)?.get(callee.property.name) ?? callee.property.name;
   return repository.getFunction(target, localName);
-}
-
-function cloneState(state: State): State {
-  return { authenticated: state.authenticated, resourceAuthorized: state.resourceAuthorized, roles: new Map([...state.roles].map(([k, v]) => [k, new Set(v)])) };
 }
 
 function mergeRoleInto(state: State, name: string, roles: Set<FlowRole>): void {
@@ -184,7 +177,6 @@ function analyzeFunction(
           const roles = roleOf(arg as t.Node, state);
           if (roles.size) childRoles.set(param.name, roles);
         });
-        const child = cloneState(state);
         analyzeFunction(target, repository, childRoles, visited, result);
         // Child findings are evidence for the caller. We deliberately do not
         // assume an arbitrary callee is secure; only positive evidence flows back.

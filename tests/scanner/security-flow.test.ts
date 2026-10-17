@@ -3,13 +3,16 @@ import { parseSource } from "@/scanner/parser/parse";
 import { buildSecurityFlow } from "@/scanner/analysis/security-flow";
 import { makeFinding } from "@/scanner/findings/factory";
 
-function finding(ruleId: "R1"|"R2"|"R3"|"R4"|"R5", line: number, source: string) {
+function finding(ruleId: "R1"|"R2"|"R3"|"R4"|"R5"|"R6"|"R7"|"R8", line: number, source: string) {
   const defs = {
     R1: ["Missing Endpoint Authorization", "CWE-862", "Critical"],
     R2: ["Hardcoded Secret", "CWE-798", "Critical"],
     R3: ["Unsafe JWT Handling", "CWE-347", "High"],
     R4: ["Potential IDOR", "CWE-639", "High"],
     R5: ["Untrusted Dynamic Execution", "CWE-95", "Critical"],
+    R6: ["Potential SQL Injection", "CWE-89", "Critical"],
+    R7: ["Potential Path Traversal", "CWE-22", "High"],
+    R8: ["Potential SSRF", "CWE-918", "High"],
   } as const;
   const [ruleName, cwe, severity] = defs[ruleId];
   return makeFinding({
@@ -63,5 +66,13 @@ describe("project-specific security flows", () => {
     const flow = buildSecurityFlow(f, parseSource("src/config.ts", source));
     expect(JSON.stringify(flow)).not.toContain("sk-abcdefghij1234567890XY");
     expect(flow.nodes.some(n => n.label.includes("Redacted"))).toBe(true);
+  });
+
+  it.each(["R6", "R7", "R8"] as const)("creates a partial data flow for %s", ruleId => {
+    const f = finding(ruleId, 4, "const value = req.query.value;");
+    const flow = buildSecurityFlow(f, parseSource("src/app.ts", "const value = req.query.value;"));
+    expect(flow.confidence).toBe("partial");
+    expect(flow.edges.some(edge => edge.vulnerable)).toBe(true);
+    expect(flow.vulnerableEdgeId).toBeTruthy();
   });
 });

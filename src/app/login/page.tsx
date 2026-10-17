@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { signupErrorMessage } from "@/lib/supabase/auth-errors";
 
 const GENERIC_ERROR = "Unable to sign in with those credentials.";
 
@@ -18,34 +19,47 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("error") === "auth_callback") {
+      // Callback errors are only known from the browser URL after hydration.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setError("Email confirmation failed or expired. Check that this app's /auth/callback URL is allowed in Supabase Authentication → URL Configuration, then request a new confirmation email.");
+    }
     createClient().auth.getUser().then(({ data }) => { if (data.user) router.replace("/dashboard"); });
   }, [router]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setError(""); setMessage("");
     if (register && !/^[A-Za-z0-9_-]{2,39}$/.test(username.trim())) { setError("Username must be 2–39 letters, numbers, _ or -."); return; }
-    if (password.length < 12 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) { setError("Use at least 12 characters with upper/lowercase letters and a number."); return; }
+    if (register && (password.length < 12 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password))) { setError("Use at least 12 characters with upper/lowercase letters and a number."); return; }
     setBusy(true);
-    const supabase = createClient();
-    if (register) {
-      const { data, error } = await supabase.auth.signUp({
-        email: email.trim(), password,
-        options: { data: { username: username.trim(), github: `https://github.com/${username.trim()}` }, emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard` },
-      });
+    try {
+      const supabase = createClient();
+      if (register) {
+        const { data, error } = await supabase.auth.signUp({
+          email: email.trim(), password,
+          options: { data: { username: username.trim(), github: `https://github.com/${username.trim()}` }, emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard` },
+        });
+        if (error) { setError(signupErrorMessage(error.message, error.code)); return; }
+        if (!data.user) { setError("Supabase did not create an account. Check the project Auth logs and try again."); return; }
+        if (!data.session) setMessage("Account created. Check your email to confirm the address, then sign in.");
+        else router.replace("/dashboard");
+        return;
+      }
+
+      const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (error || !data.user) { setError(GENERIC_ERROR); return; }
+      const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      const next = new URLSearchParams(window.location.search).get("next");
+      const safeNext = next?.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
+      router.replace(aal?.currentLevel === "aal1" && aal?.nextLevel === "aal2" ? "/auth/mfa" : safeNext);
+      router.refresh();
+    } catch (reason) {
+      setError(register
+        ? signupErrorMessage(reason instanceof Error ? reason.message : "Unexpected error.")
+        : GENERIC_ERROR);
+    } finally {
       setBusy(false);
-      if (error) { setError("Unable to create the account. Check the details and try again."); return; }
-      if (!data.session) setMessage("Account created. Check your email to confirm the address, then sign in.");
-      else router.replace("/dashboard");
-      return;
     }
-    const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    setBusy(false);
-    if (error || !data.user) { setError(GENERIC_ERROR); return; }
-    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-    const next = new URLSearchParams(window.location.search).get("next");
-    const safeNext = next?.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
-    router.replace(aal?.currentLevel === "aal1" && aal?.nextLevel === "aal2" ? "/auth/mfa" : safeNext);
-    router.refresh();
   }
 
   return <main className="min-h-screen grid place-items-center bg-[#070b10] px-4 py-8">
@@ -55,7 +69,7 @@ export default function LoginPage() {
         <form onSubmit={submit} className="mt-8 space-y-5">
           {register && <input value={username} onChange={e=>setUsername(e.target.value)} placeholder="Username" required className="w-full rounded-lg bg-slate-100 px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-600"/>}
           <input type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" required className="w-full rounded-lg bg-slate-100 px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-600"/>
-          <input type="password" autoComplete={register ? "new-password" : "current-password"} value={password} onChange={e=>setPassword(e.target.value)} placeholder="Password" required minLength={12} className="w-full rounded-lg bg-slate-100 px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-600"/>
+          <input type="password" autoComplete={register ? "new-password" : "current-password"} value={password} onChange={e=>setPassword(e.target.value)} placeholder="Password" required minLength={register ? 12 : undefined} className="w-full rounded-lg bg-slate-100 px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-600"/>
           {!register && <div className="text-right text-sm"><Link href="/auth/forgot-password" className="text-slate-600 hover:text-emerald-700">Forgot Password?</Link></div>}
           {error && <p className="text-sm text-red-600">{error}</p>}{message && <p className="text-sm text-emerald-700">{message}</p>}
           <button disabled={busy} className="w-full rounded-lg bg-[#047d02] py-3 font-semibold text-white disabled:opacity-60">{busy ? "Please wait…" : register ? "Register" : "Login"}</button>

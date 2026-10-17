@@ -9,7 +9,8 @@ import { FindingDetail } from "../components/FindingDetail";
 import { AppNav } from "../components/AppNav";
 import { saveScan } from "@/lib/clientStore";
 import { SecurityFlowMap } from "../components/SecurityFlowMap";
-import { saveBatchReport } from "@/lib/batchStore";
+import { saveBatchReport, type BatchReport } from "@/lib/batchStore";
+import { ShareButton } from "../components/ShareButton";
 
 type AppState = "input" | "scanning" | "results";
 const SCAN_STEPS = ["Cloning public repository", "Reading supported source files", "Running deterministic rules", "Building project security flow", "Calculating risk score"];
@@ -25,7 +26,6 @@ const RULES = [
 ] as const;
 
 export default function ScanPage() {
-  const router = useRouter();
   const [state, setState] = useState<AppState>("input");
   const [repoUrl, setRepoUrl] = useState("");
   const [scanStep, setScanStep] = useState(0);
@@ -41,6 +41,9 @@ export default function ScanPage() {
     const params = new URLSearchParams(window.location.search);
     const initialRepo = params.get("repo");
     const reportId = params.get("report");
+    // URL and browser-storage state is hydrated only after client mount to avoid
+    // server/client rendering different report content.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (initialRepo) setRepoUrl(initialRepo);
     if (reportId) {
       try {
@@ -288,23 +291,42 @@ function ProfileScanner({ initialRepoUrl, error: legacyError, onLegacyRepoScan }
     }
 
     const batchId = `batch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    saveBatchReport({
+    const batchItems = finalResults.map(item => ({
+      repoId: item.repo.id,
+      fullName: item.repo.full_name,
+      htmlUrl: item.repo.html_url,
+      status: item.report ? "complete" as const : "error" as const,
+      report: item.report,
+      error: item.error,
+    }));
+    let persistenceWarning: string | undefined;
+    try {
+      const response = await fetch("/api/batches", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ batchId, username: username.replace(/^@/, ""), items: batchItems }),
+      });
+      const data: { error?: string } = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to save the batch report to your account.");
+    } catch (reason) {
+      persistenceWarning = reason instanceof Error
+        ? `Saved in this browser only. ${reason.message}`
+        : "Saved in this browser only. Unable to save the batch report to your account.";
+    }
+
+    const batch: BatchReport = {
       batchId,
       username: username.replace(/^@/, ""),
       createdAt: new Date().toISOString(),
-      items: finalResults.map(item => ({
-        repoId: item.repo.id,
-        fullName: item.repo.full_name,
-        htmlUrl: item.repo.html_url,
-        status: item.report ? "complete" : "error",
-        report: item.report,
-        error: item.error,
-      })),
-    });
-    void fetch("/api/batches", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
-      batchId, username: username.replace(/^@/, ""), items: finalResults.map(item => ({ repoId: item.repo.id, fullName: item.repo.full_name, htmlUrl: item.repo.html_url, status: item.report ? "complete" : "error", report: item.report, error: item.error }))
-    }) }).catch(() => {});
-
+      items: batchItems,
+      persistenceWarning,
+    };
+    if (!saveBatchReport(batch)) {
+      batch.persistenceWarning = [batch.persistenceWarning, "The report could not be saved in browser storage."]
+        .filter(Boolean)
+        .join(" ");
+      setLookupError(batch.persistenceWarning);
+    }
     setScanning(false);
     setDone(true);
     router.push(`/reports/batch?batch=${encodeURIComponent(batchId)}`);

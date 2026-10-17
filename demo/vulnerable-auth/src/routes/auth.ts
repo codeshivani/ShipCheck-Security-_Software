@@ -7,6 +7,7 @@ export const authRouter = Router();
 authRouter.post("/login", (req, res) => {
   const { username, password } = req.body;
   // (demo) credential check omitted for brevity — assume it succeeds
+  void password;
   const token = jwt.sign({ sub: username, role: "user" }, config.jwtSecret, { expiresIn: "1h" });
   res.json({ token });
 });

@@ -6,8 +6,7 @@ import { makeFinding } from "../findings/factory";
 import { Rule } from "./types";
 import type { RepositoryAnalysis } from "../analysis/repository";
 import { analyzeAuthorizationFlow } from "../analysis/authorization-flow";
-import { analyzeFunctionNode, analyzeInterproceduralFunction } from "../analysis/interprocedural-flow";
-import { isRequestMember, unwrapExpression } from "../analysis/ast-utils";
+import { analyzeFunctionNode } from "../analysis/interprocedural-flow";
 
 export const R4_DEFINITION: RuleDefinition = {
   id: "R4",
@@ -27,14 +26,6 @@ function routeRegistration(path: import("@babel/traverse").NodePath<t.CallExpres
   if (!t.isIdentifier(c.property)) return false;
   if (!["get", "post", "put", "patch", "delete", "head", "options"].includes(c.property.name.toLowerCase())) return false;
   return t.isIdentifier(c.object);
-}
-
-function directResource(node: t.Node): boolean {
-  const n = unwrapExpression(node);
-  if (isRequestMember(n)) return true;
-  if (t.isObjectExpression(n)) return n.properties.some(p => t.isObjectProperty(p) && directResource(p.value));
-  if (t.isArrayExpression(n)) return n.elements.some(e => !!e && directResource(e));
-  return false;
 }
 
 export const r4IdorRule: Rule = {

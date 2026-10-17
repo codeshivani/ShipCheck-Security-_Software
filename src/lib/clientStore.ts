@@ -1,3 +1,5 @@
+import type { ScanReport } from "@/types/reports";
+
 export interface StoredScan {
   scanId: string;
   repoUrl: string;
@@ -13,6 +15,21 @@ export interface StoredScan {
 
 const KEY = "shipcheck_scans";
 const REPO_KEY = "shipcheck_repositories";
+
+export function storedScanFromReport(report: ScanReport, fixed = 0): StoredScan {
+  return {
+    scanId: report.scanId,
+    repoUrl: report.repoUrl,
+    score: report.risk.score,
+    grade: report.risk.grade,
+    vulnerabilities: report.findings.length,
+    critical: report.risk.counts.Critical,
+    high: report.risk.counts.High,
+    medium: report.risk.counts.Medium,
+    fixed,
+    createdAt: report.createdAt,
+  };
+}
 
 export function getStoredScans(): StoredScan[] {
   if (typeof window === "undefined") return [];
@@ -36,4 +53,3 @@ export function removeRepository(url: string) {
   const repos = getRepositories().filter(r => r !== url);
   localStorage.setItem(REPO_KEY, JSON.stringify(repos));
 }
-

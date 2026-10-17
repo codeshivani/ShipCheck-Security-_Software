@@ -4,13 +4,13 @@ import { cloneAndScan } from "@/scanner/scanner";
 import { RepoError } from "@/scanner/repo/clone";
 import { saveSession } from "@/scanner/session";
 import { persistScan } from "@/lib/db";
-import { requireSameOrigin, requireUser } from "@/lib/auth";
+import { getOptionalUser, requireSameOrigin } from "@/lib/auth";
 
 const BodySchema = z.object({ repoUrl: z.string().trim().min(1, "repoUrl is required").max(500, "repoUrl is too long") });
 
 export async function POST(req: NextRequest) {
   const originError = requireSameOrigin(req); if (originError) return originError;
-  const auth = await requireUser(); if (auth.response) return auth.response;
+  const auth = await getOptionalUser(); if (auth.response) return auth.response;
   let body: unknown;
   try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 }); }
   const parsed = BodySchema.safeParse(body);
@@ -18,8 +18,10 @@ export async function POST(req: NextRequest) {
 
   try {
     const { report, dir, cleanup } = await cloneAndScan(parsed.data.repoUrl);
-    saveSession({ scanId: report.scanId, userId: auth.user!.id, repoDir: dir, cleanup, report, createdAt: Date.now() });
-    await persistScan(report, auth.user!.id).catch((error) => console.error("Scan persistence failed:", error));
+    saveSession({ scanId: report.scanId, userId: auth.user?.id ?? null, repoDir: dir, cleanup, report, createdAt: Date.now() });
+    if (auth.user) {
+      await persistScan(report, auth.user.id).catch((error) => console.error("Scan persistence failed:", error));
+    }
     return NextResponse.json({ report });
   } catch (err) {
     if (err instanceof RepoError) {

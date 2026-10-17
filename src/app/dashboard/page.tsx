@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AppNav } from "@/app/components/AppNav";
-import { getRepositories, getStoredScans, type StoredScan } from "@/lib/clientStore";
+import { getRepositories, getStoredScans, storedScanFromReport, type StoredScan } from "@/lib/clientStore";
+import type { ScanReport } from "@/types/reports";
 
 export default function DashboardPage() {
   const [user, setUser] = useState<{ username: string; email: string; github: string } | null>(null);
@@ -12,14 +13,15 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetch("/api/me").then(async response => { if (!response.ok) return; const data = await response.json(); if (data.user) setUser({ username: data.user.username || data.user.email?.split("@")[0] || "User", email: data.user.email || "", github: data.user.github || "" }); }).catch(() => {});
+    // Browser storage is only available after hydration; the server render uses empty defaults.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setScans(getStoredScans());
     setRepos(getRepositories());
     fetch("/api/history").then(async response => {
       if (!response.ok) return;
-      const data = await response.json();
+      const data: { scans?: ScanReport[] } = await response.json();
       if (Array.isArray(data.scans)) {
-        const mapped = data.scans.map((r: any) => ({ scanId: r.scanId, repoUrl: r.repoUrl, score: r.risk.score, grade: r.risk.grade, vulnerabilities: r.findings.length, critical: r.risk.counts.Critical, high: r.risk.counts.High, medium: r.risk.counts.Medium, fixed: 0, createdAt: r.createdAt }));
-        setScans(mapped);
+        setScans(data.scans.map(report => storedScanFromReport(report)));
       }
     }).catch(() => {});
   }, []);
@@ -79,7 +81,7 @@ export default function DashboardPage() {
 
           <div className="rounded-2xl border border-sc-border bg-white p-6">
             <h2 className="text-xl font-bold">Saved Repositories</h2>
-            <p className="text-sm text-sc-muted">Repositories you've scanned before.</p>
+            <p className="text-sm text-sc-muted">Repositories you&apos;ve scanned before.</p>
             <div className="mt-5 space-y-3">
               {repos.length ? repos.slice(0, 5).map(url => (
                 <Link key={url} href={`/scan?repo=${encodeURIComponent(url)}`} className="block rounded-xl border border-sc-border bg-white p-4 hover:border-sc-pass/40">

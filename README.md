@@ -38,6 +38,9 @@ scoring, and rescan comparison do not require an AI key. Without one, ShipCheck
 uses deterministic remediation guidance per finding type (see
 `src/ai/validator.ts`).
 
+Public GitHub repository scans are available without signing in. Sign in to
+access your account dashboard, history, and persistent report sharing.
+
 ### Optional AI layer
 
 Set one of these in `.env.local`:
@@ -131,6 +134,11 @@ The New Scan screen accepts a public GitHub repository URL directly:
 
 The existing GitHub-profile batch scanner remains available as a second
 workflow.
+
+### Sharing reports
+
+Authenticated users can create read-only report links when persistent
+Supabase storage is configured. Share links expire after seven days.
 
 ### Analyzer exclusions
 

@@ -83,7 +83,7 @@ export function isSensitiveDatabaseCall(node: t.CallExpression): boolean {
   if (property === "get" || property === "all") {
     return /(prisma|sequelize|mongoose|knex|typeorm|repository|repo|model|database|\bdb\b)/i.test(memberChainToString(callee.object));
   }
-  return /^(find|findOne|findById|findByPk|findFirst|findUnique|findMany|create|createMany|update|updateMany|upsert|delete|deleteMany|destroy|remove|save|insert|replace|query|aggregate|select)$/i.test(property);
+  return /^(find|findOne|findById|findByPk|findFirst|findUnique|findMany|findOneAndUpdate|findByIdAndUpdate|findOneAndDelete|findByIdAndDelete|findOneAndRemove|create|createMany|update|updateMany|upsert|delete|deleteMany|destroy|remove|save|insert|replace|query|aggregate|select)$/i.test(property);
 }
 
 export function functionBody(path: NodePath<t.Node>): t.Node | null {

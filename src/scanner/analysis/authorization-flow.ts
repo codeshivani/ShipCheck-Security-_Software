@@ -1,4 +1,3 @@
-import traverse from "@babel/traverse";
 import * as t from "@babel/types";
 import { memberChainToString, traverseNode, unwrapExpression } from "./ast-utils";
 
@@ -65,9 +64,9 @@ function expressionContainsIdentity(node: t.Node, identities: Set<string>): bool
 
 function expressionContainsResource(node: t.Node, resources: Set<string>): boolean {
   if (isRequestLikeExpression(node, resources)) return true;
-  for (const key of Object.keys(node)) {
-    if (key === "loc" || key === "start" || key === "end") continue;
-    const value = (node as unknown as Record<string, unknown>)[key];
+  const fields = node as unknown as Record<string, unknown>;
+  for (const key of t.VISITOR_KEYS[node.type] ?? []) {
+    const value = fields[key];
     if (Array.isArray(value)) {
       if (value.some((item) => item && typeof item === "object" && "type" in item && expressionContainsResource(item as t.Node, resources))) return true;
     } else if (value && typeof value === "object" && "type" in value) {
@@ -75,6 +74,21 @@ function expressionContainsResource(node: t.Node, resources: Set<string>): boole
     }
   }
   return false;
+}
+
+function collectRequestResources(node: t.Node, resources: Set<string>): void {
+  if (isRequestResource(node)) resources.add(chain(node).toLowerCase());
+  const fields = node as unknown as Record<string, unknown>;
+  for (const key of t.VISITOR_KEYS[node.type] ?? []) {
+    const value = fields[key];
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item && typeof item === "object" && "type" in item) collectRequestResources(item as t.Node, resources);
+      }
+    } else if (value && typeof value === "object" && "type" in value) {
+      collectRequestResources(value as t.Node, resources);
+    }
+  }
 }
 
 function comparisonConnectsIdentityAndResource(node: t.Node, identities: Set<string>, resources: Set<string>): boolean {
@@ -175,10 +189,10 @@ export function analyzeAuthorizationFlow(node: t.Node): AuthorizationFlowSummary
       }
 
       if (isDatabaseLookup(path.node)) {
-        const requestArgs = path.node.arguments.filter((arg) => isRequestLikeExpression(arg as t.Node, requestResources));
+        const requestArgs = path.node.arguments.filter((arg) => expressionContainsResource(arg as t.Node, requestResources));
         if (requestArgs.length > 0) {
           resourceLookup = true;
-          for (const arg of requestArgs) requestResources.add(chain(arg as t.Node).toLowerCase());
+          for (const arg of requestArgs) collectRequestResources(arg as t.Node, requestResources);
         }
       }
     },

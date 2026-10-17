@@ -4,22 +4,24 @@ import { getSession, updateSessionReport } from "@/scanner/session";
 import { scanDirectoryWithTimeout, withScanSlot, RepoError } from "@/scanner/scanner";
 import { compareScans } from "@/rescan/compare";
 import { updateScan } from "@/lib/db";
-import { requireSameOrigin, requireUser } from "@/lib/auth";
+import { getOptionalUser, requireSameOrigin } from "@/lib/auth";
 
 const BodySchema = z.object({ scanId: z.string().min(8).max(100) });
 
 export async function POST(req: NextRequest) {
   const originError = requireSameOrigin(req); if (originError) return originError;
-  const auth = await requireUser(); if (auth.response) return auth.response;
+  const auth = await getOptionalUser(); if (auth.response) return auth.response;
   const parsed = BodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid scan id." }, { status: 400 });
   const session = getSession(parsed.data.scanId);
-  if (!session || session.userId !== auth.user!.id) return NextResponse.json({ error: "Scan not found for this account." }, { status: 404 });
+  if (!session || session.userId !== (auth.user?.id ?? null)) return NextResponse.json({ error: "Scan not found for this account." }, { status: 404 });
   try {
     const beforeReport = session.report;
     const afterReport = await withScanSlot(() => scanDirectoryWithTimeout(session.repoDir, session.report.repoUrl));
     updateSessionReport(session.scanId, afterReport);
-    await updateScan(afterReport, auth.user!.id).catch((error) => console.error("Rescan persistence failed:", error));
+    if (auth.user) {
+      await updateScan(afterReport, auth.user.id).catch((error) => console.error("Rescan persistence failed:", error));
+    }
     return NextResponse.json({ comparison: compareScans(beforeReport, afterReport), report: afterReport });
   } catch (err) {
     console.error("Rescan error:", err);

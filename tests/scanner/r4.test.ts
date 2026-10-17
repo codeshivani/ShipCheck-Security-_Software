@@ -94,6 +94,17 @@ describe("R4 — Potential IDOR", () => {
     expect(findings).toHaveLength(1);
   });
 
+  it("detects request identifiers nested in lookup objects", () => {
+    const src = `
+      function handler(req, res) {
+        const doc = Document.findOne({ id: req.params.id });
+        res.json(doc);
+      }
+    `;
+    const findings = runRule(r4IdorRule, "src/routes/docs.ts", src);
+    expect(findings).toHaveLength(1);
+  });
+
   it("does not flag a query constrained by tenant", () => {
     const src = `
       function handler(req, res) {
